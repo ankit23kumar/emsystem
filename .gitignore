@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+env/
+.venv/
+
+# Django and local secrets
+.env
+db.sqlite3
+
+# Node.js
+node_modules/
+dist/
+
+# IDE and operating system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
