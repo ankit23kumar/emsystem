@@ -29,6 +29,7 @@ const form = reactive({
   last_name: '',
   email: '',
   password: '',
+  valid_until: '',
 })
 
 function clearErrors() {
@@ -42,6 +43,7 @@ function resetForm() {
   form.password = ''
   errorMessage.value = ''
   successMessage.value = ''
+  form.valid_until = ''
   clearErrors()
 }
 
@@ -90,6 +92,23 @@ function validate() {
     }
   }
 
+  if (!isEditMode.value) {
+    if (!form.valid_until) {
+      errors.valid_until = 'Validity date is required.'
+    } else {
+      const today = new Date()
+      const todayString = [
+        today.getFullYear(),
+        String(today.getMonth() + 1).padStart(2, '0'),
+        String(today.getDate()).padStart(2, '0'),
+      ].join('-')
+
+      if (form.valid_until < todayString) {
+        errors.valid_until = 'Validity date cannot be in the past.'
+      }
+    }
+  }
+
   return Object.keys(errors).length === 0
 }
 
@@ -109,6 +128,7 @@ async function submitForm() {
 
   if (!isEditMode.value) {
     payload.password = form.password
+    payload.valid_until = form.valid_until
   }
 
   try {
@@ -169,12 +189,7 @@ function clearFieldError(field) {
 
 <template>
   <div class="modal-backdrop" @click.self="closeModal">
-    <section
-      class="user-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="modal-title"
-    >
+    <section class="user-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <header class="modal-header">
         <div>
           <h2 id="modal-title">
@@ -190,13 +205,7 @@ function clearFieldError(field) {
           </p>
         </div>
 
-        <button
-          class="close-button"
-          type="button"
-          aria-label="Close dialog"
-          :disabled="saving"
-          @click="closeModal"
-        >
+        <button class="close-button" type="button" aria-label="Close dialog" :disabled="saving" @click="closeModal">
           ×
         </button>
       </header>
@@ -213,18 +222,9 @@ function clearFieldError(field) {
         <div class="form-group">
           <label for="modal-first-name">First name</label>
 
-          <input
-            id="modal-first-name"
-            v-model="form.first_name"
-            :class="{ 'input-error': errors.first_name }"
-            type="text"
-            maxlength="40"
-            autocomplete="given-name"
-            placeholder="Enter first name"
-            :disabled="saving"
-            :aria-invalid="Boolean(errors.first_name)"
-            @input="clearFieldError('first_name')"
-          />
+          <input id="modal-first-name" v-model="form.first_name" :class="{ 'input-error': errors.first_name }"
+            type="text" maxlength="40" autocomplete="given-name" placeholder="Enter first name" :disabled="saving"
+            :aria-invalid="Boolean(errors.first_name)" @input="clearFieldError('first_name')" />
 
           <small v-if="errors.first_name" class="field-error">
             {{ errors.first_name }}
@@ -234,18 +234,9 @@ function clearFieldError(field) {
         <div class="form-group">
           <label for="modal-last-name">Last name</label>
 
-          <input
-            id="modal-last-name"
-            v-model="form.last_name"
-            :class="{ 'input-error': errors.last_name }"
-            type="text"
-            maxlength="40"
-            autocomplete="family-name"
-            placeholder="Enter last name"
-            :disabled="saving"
-            :aria-invalid="Boolean(errors.last_name)"
-            @input="clearFieldError('last_name')"
-          />
+          <input id="modal-last-name" v-model="form.last_name" :class="{ 'input-error': errors.last_name }" type="text"
+            maxlength="40" autocomplete="family-name" placeholder="Enter last name" :disabled="saving"
+            :aria-invalid="Boolean(errors.last_name)" @input="clearFieldError('last_name')" />
 
           <small v-if="errors.last_name" class="field-error">
             {{ errors.last_name }}
@@ -255,18 +246,9 @@ function clearFieldError(field) {
         <div class="form-group">
           <label for="modal-email">Email address</label>
 
-          <input
-            id="modal-email"
-            v-model="form.email"
-            :class="{ 'input-error': errors.email }"
-            type="email"
-            maxlength="254"
-            autocomplete="email"
-            placeholder="name@example.com"
-            :disabled="saving"
-            :aria-invalid="Boolean(errors.email)"
-            @input="clearFieldError('email')"
-          />
+          <input id="modal-email" v-model="form.email" :class="{ 'input-error': errors.email }" type="email"
+            maxlength="254" autocomplete="email" placeholder="name@example.com" :disabled="saving"
+            :aria-invalid="Boolean(errors.email)" @input="clearFieldError('email')" />
 
           <small v-if="errors.email" class="field-error">
             {{ errors.email }}
@@ -277,15 +259,8 @@ function clearFieldError(field) {
         <div v-if="!isEditMode" class="form-group">
           <label for="modal-password">Password</label>
 
-          <PasswordInput
-            id="modal-password"
-            v-model="form.password"
-            name="password"
-            placeholder="Enter 8–128 characters"
-            autocomplete="new-password"
-            :required="true"
-            :disabled="saving"
-          />
+          <PasswordInput id="modal-password" v-model="form.password" name="password"
+            placeholder="Enter 8–128 characters" autocomplete="new-password" :required="true" :disabled="saving" />
 
           <small class="helper-text">
             Password must be 8–128 characters.
@@ -300,21 +275,31 @@ function clearFieldError(field) {
           Passwords are securely hashed and cannot be viewed or retrieved.
         </p>
 
+        <!-- Validity date is required only when creating a user. -->
+        <div v-if="!isEditMode" class="form-group">
+          <label for="modal-valid-until">Validity date</label>
+
+          <input id="modal-valid-until" v-model="form.valid_until" :class="{ 'input-error': errors.valid_until }"
+            type="date" :min="new Date().getFullYear() + '-' +
+              String(new Date().getMonth() + 1).padStart(2, '0') + '-' +
+              String(new Date().getDate()).padStart(2, '0')" required :disabled="saving"
+            :aria-invalid="Boolean(errors.valid_until)" @change="clearFieldError('valid_until')" />
+
+          <small class="helper-text">
+            Choose the date until which this account will remain valid.
+          </small>
+
+          <small v-if="errors.valid_until" class="field-error">
+            {{ errors.valid_until }}
+          </small>
+        </div>
+
         <footer class="modal-actions">
-          <button
-            type="button"
-            class="cancel-button"
-            :disabled="saving"
-            @click="closeModal"
-          >
+          <button type="button" class="cancel-button" :disabled="saving" @click="closeModal">
             Cancel
           </button>
 
-          <button
-            type="submit"
-            class="save-button"
-            :disabled="saving"
-          >
+          <button type="submit" class="save-button" :disabled="saving">
             {{
               saving
                 ? 'Saving...'
@@ -401,7 +386,7 @@ function clearFieldError(field) {
   font-weight: 650;
 }
 
-.form-group > input {
+.form-group>input {
   display: block;
   width: 100%;
   min-width: 0;
@@ -415,16 +400,16 @@ function clearFieldError(field) {
   font-size: 14px;
 }
 
-.form-group > input:focus {
+.form-group>input:focus {
   border-color: #2864ed;
   box-shadow: 0 0 0 3px rgba(40, 100, 237, 0.12);
 }
 
-.form-group > input.input-error {
+.form-group>input.input-error {
   border-color: #d92d20;
 }
 
-.form-group > input:disabled {
+.form-group>input:disabled {
   background: #f9fafb;
 }
 

@@ -4,6 +4,7 @@ from datetime import timedelta
 from django.test import override_settings
 from django.test import TestCase
 from django.utils import timezone
+from datetime import timedelta
 from django.contrib.auth.hashers import make_password
 
 from .models import User
@@ -183,6 +184,9 @@ class EMSystemAPITests(TestCase):
                 "last_name": "Employee",
                 "email": "created@example.com",
                 "password": "SecurePass123!",
+                "valid_until": (
+                    timezone.localdate() + timedelta(days=30)
+                ).isoformat(),
             }),
             content_type="application/json",
             **self.auth_headers,
@@ -281,6 +285,9 @@ class EMSystemAPITests(TestCase):
                 "last_name": "User",
                 "email": self.user.email.upper(),
                 "password": "SecurePass123!",
+                "valid_until": (
+                    timezone.localdate() + timedelta(days=30)
+                ).isoformat(),
             }),
             content_type="application/json",
             **self.auth_headers,

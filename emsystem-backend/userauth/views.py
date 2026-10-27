@@ -10,7 +10,7 @@ from django.http import HttpResponse, HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.hashers import check_password
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
-from datetime import timedelta
+from datetime import timedelta, datetime , time
 # from datetime import datetime, timedelta, timezone as dt_timezone
 from django.utils import timezone
 from django.conf import settings
@@ -628,10 +628,11 @@ def create_user(request):
     last_name = data.get("last_name")
     email = data.get("email")
     password = data.get("password")
+    valid_until = data.get("valid_until")
     
     if not all(  
         isinstance(value ,str )
-        for value in [first_name, last_name, email, password]
+        for value in [first_name, last_name, email, password, valid_until,]
         ):
         return JsonResponse(
             {"error": "All fields must be String"},
@@ -675,14 +676,35 @@ def create_user(request):
         )
         
     try:
+        selected_date = datetime.strptime(
+            valid_until,
+            "%Y-%m-%d",
+            ).date()
+    except ValueError:
+        return JsonResponse(
+            {"error": "Enter a valid date in YYYY-MM-DD format"},
+            status=400,
+        )
+
+    today = timezone.localdate()
+
+    if selected_date < today:
+        return JsonResponse(
+            {"error": "Validity date cannot be in the past"},
+            status=400,
+        )
+
+    valid_until_datetime = timezone.make_aware(
+        datetime.combine(selected_date, time.max)
+    )       
+
+    try:
         user = User.objects.create(
             first_name = first_name,
             last_name = last_name,
             email = email,
             password = make_password(password),
-            valid_until=timezone.now() + timedelta(
-                days=settings.ACCOUNT_VALIDITY_DAYS
-            ),
+            valid_until=valid_until_datetime,
         )
     except IntegrityError:
         return JsonResponse(
