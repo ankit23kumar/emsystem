@@ -1,0 +1,1316 @@
+
+<script setup>
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { clearSession, getUser } from '../services/auth'
+import { useUsers } from '../composables/useUsers'
+import UserFormModal from '../components/UserFormModal.vue'
+import { deleteUser, getMyProfile, updateUser} from '../services/userService'
+
+const router = useRouter()
+
+const {
+  users,
+  loading :usersLoading,
+  errorMessage,
+  currentPage,
+  pageSize,
+  totalUsers,
+  totalPages,
+  hasNext,
+  hasPrevious,
+  loadUsers,
+} = useUsers(router)
+
+const user = ref(getUser())
+// const users = ref([])
+const loading = ref(true)
+// const usersLoading = ref(false)
+const savingProfile = ref(false)
+
+// const errorMessage = ref('')
+const successMessage = ref('')
+const profileError = ref('')
+const profileSuccess = ref('')
+
+const showProfileForm = ref(false)
+const showPasswordNotice = ref(null)
+
+// const currentPage = ref(1)
+// const pageSize = ref(10)
+// const totalUsers = ref(0)
+// const totalPages = ref(0)
+// const hasNext = ref(false)
+// const hasPrevious = ref(false)
+
+const showUserModal = ref(false)
+const userFormMode = ref('create')
+const selectedUser = ref(null)
+
+function openCreateUserModal() {
+  selectedUser.value = null
+  userFormMode.value = 'create'
+  showUserModal.value = true
+}
+
+function openEditUserModal(item) {
+  selectedUser.value = { ...item }
+  userFormMode.value = 'edit'
+  showUserModal.value = true
+}
+
+async function handleUserSaved() {
+  showUserModal.value = false
+  selectedUser.value = null
+  successMessage.value =
+    userFormMode.value === 'create'
+      ? 'User created successfully.'
+      : 'User updated successfully.'
+
+  await loadUsers(currentPage.value)
+}
+
+const profileForm = ref({
+  first_name: '',
+  last_name: '',
+  email: '',
+})
+
+const profileErrors = ref({})
+
+const fullName = computed(() => {
+  return `${user.value?.first_name || ''} ${user.value?.last_name || ''}`.trim()
+})
+
+const initials = computed(() => {
+  const first = user.value?.first_name?.[0] || ''
+  const last = user.value?.last_name?.[0] || ''
+  return (first + last).toUpperCase() || 'U'
+})
+
+// These counts describe the users currently loaded on this page.
+// Total users comes from the backend's pagination metadata.
+const validOnPage = computed(() =>
+  users.value.filter(isAccountValid).length
+)
+
+const invalidOnPage = computed(() =>
+  users.value.filter(user => !isAccountValid(user)).length
+)
+
+const newThisMonthOnPage = computed(() => {
+  const now = new Date()
+
+  return users.value.filter(item => {
+    if (!item.created_at) return false
+
+    const date = new Date(item.created_at)
+
+    return (
+      !Number.isNaN(date.getTime()) &&
+      date.getMonth() === now.getMonth() &&
+      date.getFullYear() === now.getFullYear()
+    )
+  }).length
+})
+
+function isAccountValid(item) {
+  if (!item.valid_until) return false
+
+  const expiry = new Date(item.valid_until)
+  if (Number.isNaN(expiry.getTime())) return false
+
+  // Treat an account as valid through its expiry date.
+  expiry.setHours(23, 59, 59, 999)
+  return expiry >= new Date()
+}
+
+function formatDate(value) {
+  if (!value) return '—'
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
+}
+
+function logout() {
+  clearSession()
+  router.replace('/')
+}
+
+async function loadProfile() {
+  try {
+    const response = await getMyProfile()
+
+    // Preserve user_id from the login session because /me may not return it.
+    user.value = {
+      ...user.value,
+      ...response.data.user,
+    }
+  } catch (error) {
+    if (error.response?.status === 401) {
+      clearSession()
+      router.replace('/')
+      return
+    }
+
+    errorMessage.value =
+      error.response?.data?.error ||
+      'Unable to load your profile.'
+  } finally {
+    loading.value = false
+  }
+}
+
+
+
+function openProfileForm() {
+  profileErrors.value = {}
+  profileError.value = ''
+  profileSuccess.value = ''
+
+  profileForm.value = {
+    first_name: user.value?.first_name || '',
+    last_name: user.value?.last_name || '',
+    email: user.value?.email || '',
+  }
+
+  showProfileForm.value = true
+}
+
+function validateProfile() {
+  const errors = {}
+  const first = profileForm.value.first_name.trim()
+  const last = profileForm.value.last_name.trim()
+  const email = profileForm.value.email.trim()
+
+  if (!first) {
+    errors.first_name = 'First name is required.'
+  } else if (first.length > 40) {
+    errors.first_name = 'First name cannot exceed 40 characters.'
+  }
+
+  if (!last) {
+    errors.last_name = 'Last name is required.'
+  } else if (last.length > 40) {
+    errors.last_name = 'Last name cannot exceed 40 characters.'
+  }
+
+  if (!email) {
+    errors.email = 'Email is required.'
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.email = 'Enter a valid email address.'
+  }
+
+  profileErrors.value = errors
+  return Object.keys(errors).length === 0
+}
+
+
+
+async function saveProfile() {
+  profileError.value = ''
+  profileSuccess.value = ''
+
+  if (!validateProfile()) return
+
+  const userId = user.value?.user_id
+
+  if (!userId) {
+    profileError.value =
+      'Your user ID is unavailable. Please log out and log in again.'
+    return
+  }
+
+  savingProfile.value = true
+
+  try {
+    const payload = {
+      first_name: profileForm.value.first_name.trim(),
+      last_name: profileForm.value.last_name.trim(),
+      email: profileForm.value.email.trim(),
+    }
+
+    const response = await updateUser(userId, payload)
+
+    user.value = {
+      ...user.value,
+      ...(response.data.user || response.data),
+      ...payload,
+    }
+
+    // Keep the locally stored session profile in sync with the edit.
+    const storedUser = {
+      ...getUser(),
+      ...user.value,
+    }
+
+    sessionStorage.setItem('emsystem_user', JSON.stringify(storedUser))
+
+    profileSuccess.value = 'Profile updated successfully.'
+    showProfileForm.value = false
+    successMessage.value = 'Your profile was updated successfully.'
+  } catch (error) {
+    if (error.response?.status === 401) {
+      clearSession()
+      router.replace('/')
+      return
+    }
+
+    const message =
+      error.response?.data?.error ||
+      error.response?.data?.message ||
+      'Unable to update your profile.'
+
+    if (error.response?.status === 409) {
+      profileErrors.value = {
+        ...profileErrors.value,
+        email: message,
+      }
+    } else {
+      profileError.value = message
+    }
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+async function handleDeleteUser(item) {
+  const confirmed = window.confirm(
+    `Delete ${item.first_name} ${item.last_name} (${item.email})? This cannot be undone.`
+  )
+
+  if (!confirmed) return
+
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    const response = await deleteUser(item.user_id)
+
+    const nextPage =
+      users.value.length === 1 && currentPage.value > 1
+        ? currentPage.value - 1
+        : currentPage.value
+
+    await loadUsers(nextPage)
+
+    successMessage.value =
+      response.data.message || 'User deleted successfully.'
+  } catch (error) {
+    if (error.response?.status === 401) {
+      clearSession()
+      router.replace('/')
+      return
+    }
+
+    errorMessage.value =
+      error.response?.data?.error ||
+      error.response?.data?.message ||
+      'Unable to delete this user.'
+
+    console.error('Delete failed:', error.response?.data || error.message)
+  }
+}
+
+async function changePageSize(event) {
+  pageSize.value = Number(event.target.value)
+  await loadUsers(1)
+}
+
+async function previousPage() {
+  if (hasPrevious.value && !usersLoading.value) {
+    await loadUsers(currentPage.value - 1)
+  }
+}
+
+async function nextPage() {
+  if (hasNext.value && !usersLoading.value) {
+    await loadUsers(currentPage.value + 1)
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([loadProfile(), loadUsers()])
+})
+</script>
+
+<template>
+  <main class="dashboard">
+    <header class="topbar">
+      <a class="brand" href="#" @click.prevent="loadUsers(1)">
+        <span class="brand-mark">EM</span>
+        <span>EMSystem</span>
+      </a>
+
+      <div class="topbar-user">
+        <span>{{ fullName || 'User' }}</span>
+        <span class="avatar-small">{{ initials }}</span>
+        <button class="logout-button" @click="logout">Log out</button>
+      </div>
+    </header>
+
+    <section class="content">
+      <div class="page-title">
+        <h1>User Dashboard</h1>
+        <p>Overview of your account and registered users</p>
+      </div>
+
+      <p v-if="successMessage" class="notice success" role="status">
+        {{ successMessage }}
+      </p>
+      <p v-if="errorMessage" class="notice error" role="alert">
+        {{ errorMessage }}
+      </p>
+
+      <section class="profile-card">
+        <div class="profile-avatar-area">
+          <div class="avatar-large">{{ initials }}</div>
+          <span>My Profile</span>
+        </div>
+
+        <div v-if="loading" class="profile-loading">
+          Loading your profile...
+        </div>
+
+        <div v-else class="profile-details">
+          <div class="detail">
+            <span class="detail-label">First name</span>
+            <strong>{{ user?.first_name || '—' }}</strong>
+          </div>
+          <div class="detail">
+            <span class="detail-label">Last name</span>
+            <strong>{{ user?.last_name || '—' }}</strong>
+          </div>
+          <div class="detail">
+            <span class="detail-label">Email</span>
+            <strong class="email-value">{{ user?.email || '—' }}</strong>
+          </div>
+          <div class="detail">
+            <span class="detail-label">Password</span>
+            <strong class="password-dots">••••••••••</strong>
+            <small class="password-note">Stored securely</small>
+          </div>
+          <div class="detail">
+            <span class="detail-label">Created date</span>
+            <strong>{{ formatDate(user?.created_at) }}</strong>
+          </div>
+          <div class="detail">
+            <span class="detail-label">Valid date</span>
+            <strong>{{ formatDate(user?.valid_until) }}</strong>
+          </div>
+        </div>
+
+        <button
+          class="outline-button profile-edit-button"
+          @click="openProfileForm"
+          :disabled="loading || !user"
+        >
+          Edit Profile
+        </button>
+      </section>
+
+      <section class="stats-grid">
+        <article class="stat-card">
+          <span class="stat-icon blue">●</span>
+          <div>
+            <strong class="stat-number">{{ totalUsers }}</strong>
+            <span class="stat-label">Total Users</span>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-icon green">●</span>
+          <div>
+            <strong class="stat-number">{{ validOnPage }}</strong>
+            <span class="stat-label">Valid Users on Page</span>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-icon red">●</span>
+          <div>
+            <strong class="stat-number">{{ invalidOnPage }}</strong>
+            <span class="stat-label">Invalid Users on Page</span>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-icon amber">●</span>
+          <div>
+            <strong class="stat-number">{{ newThisMonthOnPage }}</strong>
+            <span class="stat-label">New This Month on Page</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="users-card">
+        <div class="table-heading">
+          <h2>User Management</h2>
+          <button class="primary-button" @click="openCreateUserModal">
+            + Add New User
+          </button>
+        </div>
+
+        <div v-if="usersLoading" class="table-state">Loading users...</div>
+        <div v-else-if="users.length === 0" class="table-state">
+          No users found.
+        </div>
+
+        <div v-else class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>First name</th>
+                <th>Last name</th>
+                <th>Email</th>
+                <th>Password</th>
+                <th>Valid</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr v-for="item in users" :key="item.user_id">
+                <td><strong>{{ item.first_name }}</strong></td>
+                <td>{{ item.last_name }}</td>
+                <td>{{ item.email }}</td>
+                <td>{{ item.password }}<strong class="password-dots">{{ user?.password || '••••••••••' }}</strong></td>
+                
+                <td>
+                  <span
+                    class="status-badge"
+                    :class="isAccountValid(item) ? 'valid' : 'invalid'"
+                  >
+                    {{ isAccountValid(item) ? 'Valid' : 'Invalid' }}
+                  </span>
+                </td>
+                <td>
+                  <div class="row-actions">
+                    <button class="outline-button" @click="openEditUserModal(item)">
+                      Edit
+                    </button>
+                    <button class="delete-button" @click="handleDeleteUser(item)">
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <footer class="pagination">
+          <div class="pagination-info">
+            <label for="page-size">Rows per page</label>
+            <select id="page-size" :value="pageSize" @change="changePageSize">
+              <option :value="10">10</option>
+              <option :value="20">20</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+            </select>
+            <span>
+              Showing
+              {{ totalUsers === 0 ? 0 : (currentPage - 1) * pageSize + 1 }}–{{
+                Math.min(currentPage * pageSize, totalUsers)
+              }}
+              of {{ totalUsers }} users
+            </span>
+          </div>
+
+          <div class="pagination-actions">
+            <button
+              class="page-button"
+              :disabled="!hasPrevious || usersLoading"
+              @click="previousPage"
+            >
+              ‹ Previous
+            </button>
+            <span class="page-indicator">
+              {{ currentPage }} / {{ totalPages || 1 }}
+            </span>
+            <button
+              class="page-button"
+              :disabled="!hasNext || usersLoading"
+              @click="nextPage"
+            >
+              Next ›
+            </button>
+          </div>
+        </footer>
+      </section>
+    </section>
+
+    <div
+      v-if="showProfileForm"
+      class="modal-backdrop"
+      @click.self="showProfileForm = false"
+    >
+      <section
+        class="profile-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-modal-title"
+      >
+        <div class="modal-heading">
+          <div>
+            <h2 id="profile-modal-title">Edit Profile</h2>
+            <p>Update your personal information.</p>
+          </div>
+          <button
+            class="close-button"
+            type="button"
+            aria-label="Close"
+            @click="showProfileForm = false"
+          >
+            ×
+          </button>
+        </div>
+
+        <p v-if="profileError" class="notice error" role="alert">
+          {{ profileError }}
+        </p>
+        <p v-if="profileSuccess" class="notice success" role="status">
+          {{ profileSuccess }}
+        </p>
+
+        <form @submit.prevent="saveProfile" novalidate>
+          <div class="form-field">
+            <label for="first-name">First name</label>
+            <input
+              id="first-name"
+              v-model="profileForm.first_name"
+              :class="{ 'invalid-input': profileErrors.first_name }"
+              autocomplete="given-name"
+              maxlength="40"
+              @input="delete profileErrors.first_name"
+            />
+            <small v-if="profileErrors.first_name" class="field-error">
+              {{ profileErrors.first_name }}
+            </small>
+          </div>
+
+          <div class="form-field">
+            <label for="last-name">Last name</label>
+            <input
+              id="last-name"
+              v-model="profileForm.last_name"
+              :class="{ 'invalid-input': profileErrors.last_name }"
+              autocomplete="family-name"
+              maxlength="40"
+              @input="delete profileErrors.last_name"
+            />
+            <small v-if="profileErrors.last_name" class="field-error">
+              {{ profileErrors.last_name }}
+            </small>
+          </div>
+
+          <div class="form-field">
+            <label for="profile-email">Email address</label>
+            <input
+              id="profile-email"
+              v-model="profileForm.email"
+              :class="{ 'invalid-input': profileErrors.email }"
+              type="email"
+              autocomplete="email"
+              maxlength="254"
+              @input="delete profileErrors.email"
+            />
+            <small v-if="profileErrors.email" class="field-error">
+              {{ profileErrors.email }}
+            </small>
+          </div>
+
+          <div class="modal-actions">
+            <button
+              type="button"
+              class="cancel-button"
+              :disabled="savingProfile"
+              @click="showProfileForm = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="primary-button"
+              :disabled="savingProfile"
+            >
+              {{ savingProfile ? 'Saving...' : 'Save Changes' }}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+    <UserFormModal
+      v-if="showUserModal"
+      :mode="userFormMode"
+      :selected-user="selectedUser"
+      @close="showUserModal = false"
+      @saved="handleUserSaved"
+    />
+  </main>
+</template>
+
+<style scoped>
+* {
+  box-sizing: border-box;
+}
+
+.dashboard {
+  min-height: 100vh;
+  background: #f3f4f6;
+  color: #151d2e;
+  font-family: Inter, Arial, Helvetica, sans-serif;
+}
+
+.topbar {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 2.3%;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ec;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #151d2e;
+  text-decoration: none;
+  font-size: 19px;
+  font-weight: 750;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: #2864ed;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #475467;
+  font-size: 13px;
+}
+
+.avatar-small,
+.avatar-large {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #2864ed;
+  font-weight: 750;
+}
+
+.avatar-small {
+  width: 34px;
+  height: 34px;
+}
+
+.logout-button,
+.primary-button {
+  border: 0;
+  border-radius: 7px;
+  background: #2864ed;
+  color: white;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.logout-button:hover,
+.primary-button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.primary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.content {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 20px 2.3% 30px;
+}
+
+.page-title {
+  margin-bottom: 12px;
+}
+
+.page-title h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.4px;
+}
+
+.page-title p {
+  margin: 6px 0 0;
+  color: #667085;
+  font-size: 13px;
+}
+
+.profile-card,
+.stat-card,
+.users-card {
+  border: 1px solid #e1e5eb;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.profile-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+  min-height: 178px;
+  padding: 28px 30px;
+}
+
+.profile-avatar-area {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.avatar-large {
+  width: 80px;
+  height: 80px;
+  font-size: 25px;
+}
+
+.profile-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px 26px;
+  padding-right: 110px;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.detail-label {
+  color: #667085;
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.detail strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.email-value {
+  overflow-wrap: anywhere;
+}
+
+.password-dots {
+  letter-spacing: 2px;
+}
+
+.password-note {
+  color: #98a2b3;
+  font-size: 10px;
+}
+
+.profile-loading {
+  color: #667085;
+  font-size: 14px;
+}
+
+.profile-edit-button {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+}
+
+.outline-button,
+.cancel-button,
+.page-button {
+  border: 1px solid #2864ed;
+  border-radius: 7px;
+  background: #fff;
+  color: #2864ed;
+  padding: 8px 13px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.outline-button:hover:not(:disabled) {
+  background: #eff6ff;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+  margin: 20px 0;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-height: 98px;
+  padding: 20px 22px;
+}
+
+.stat-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 16px;
+}
+
+.stat-icon.blue {
+  color: #2864ed;
+  background: #dbeafe;
+}
+
+.stat-icon.green {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.stat-icon.red {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+.stat-icon.amber {
+  color: #d97706;
+  background: #fef3c7;
+}
+
+.stat-card > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.stat-number {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.stat-label {
+  color: #667085;
+  font-size: 12px;
+}
+
+.users-card {
+  overflow: hidden;
+}
+
+.table-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.table-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  white-space: nowrap;
+}
+
+thead {
+  background: #f8fafc;
+}
+
+th,
+td {
+  padding: 12px 18px;
+  border-bottom: 1px solid #e8ebf0;
+  font-size: 12px;
+}
+
+th {
+  color: #667085;
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+td {
+  color: #344054;
+}
+
+td strong {
+  color: #151d2e;
+}
+
+tbody tr:hover {
+  background: #f9fafb;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  padding: 5px 12px;
+  border-radius: 30px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.status-badge.valid {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-badge.invalid {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.delete-button {
+  border: 1px solid #ef4444;
+  border-radius: 7px;
+  background: #fff;
+  color: #dc2626;
+  padding: 8px 13px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.delete-button:hover {
+  background: #fef2f2;
+}
+
+.password-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #667085;
+  letter-spacing: 1px;
+}
+
+.eye-button {
+  border: 0;
+  background: transparent;
+  color: #2864ed;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.password-tooltip {
+  position: absolute;
+  z-index: 2;
+  top: 27px;
+  left: 0;
+  width: 230px;
+  white-space: normal;
+  padding: 10px 12px;
+  border: 1px solid #e1e5eb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 6px 20px #10182818;
+  color: #344054;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.table-state {
+  padding: 35px 20px;
+  color: #667085;
+  text-align: center;
+  font-size: 13px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.pagination-info,
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: #667085;
+  font-size: 11px;
+}
+
+.pagination select {
+  min-width: 65px;
+  padding: 7px 9px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: white;
+  color: #344054;
+}
+
+.page-button {
+  border-color: #d0d5dd;
+  color: #344054;
+}
+
+.page-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.page-indicator {
+  color: #344054;
+  font-weight: 650;
+}
+
+.notice {
+  padding: 11px 14px;
+  margin: 0 0 14px;
+  border: 1px solid;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.notice.success {
+  color: #067647;
+  background: #ecfdf3;
+  border-color: #abefc6;
+}
+
+.notice.error {
+  color: #b42318;
+  background: #fef3f2;
+  border-color: #fecdca;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: 20px;
+  background: #10182880;
+}
+
+.profile-modal {
+  width: min(100%, 470px);
+  padding: 25px;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 20px 50px #10182830;
+}
+
+.modal-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.modal-heading h2 {
+  margin: 0;
+  font-size: 21px;
+}
+
+.modal-heading p {
+  margin: 6px 0 0;
+  color: #667085;
+  font-size: 13px;
+}
+
+.close-button {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  color: #667085;
+  font-size: 25px;
+  cursor: pointer;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 17px;
+}
+
+.form-field label {
+  color: #344054;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.form-field input {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  outline: none;
+  color: #151d2e;
+  font: inherit;
+  font-size: 13px;
+}
+
+.form-field input:focus {
+  border-color: #2864ed;
+  box-shadow: 0 0 0 3px #2864ed1c;
+}
+
+.form-field input.invalid-input {
+  border-color: #dc2626;
+}
+
+.field-error {
+  color: #b42318;
+  font-size: 12px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.cancel-button {
+  border-color: #d0d5dd;
+  color: #344054;
+}
+
+@media (max-width: 900px) {
+  .profile-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-right: 0;
+    padding-top: 25px;
+  }
+
+  .profile-card {
+    grid-template-columns: 85px minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    padding: 12px 15px;
+  }
+
+  .topbar-user {
+    gap: 8px;
+  }
+
+  .topbar-user > span:first-child {
+    display: none;
+  }
+
+  .content {
+    padding: 20px 12px;
+  }
+
+  .page-title h1 {
+    font-size: 22px;
+  }
+
+  .profile-card {
+    grid-template-columns: 1fr;
+    padding: 22px 18px;
+  }
+
+  .profile-avatar-area {
+    align-items: flex-start;
+  }
+
+  .profile-edit-button {
+    top: 15px;
+    right: 15px;
+  }
+
+  .profile-details {
+    grid-template-columns: 1fr;
+    gap: 17px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .stat-card {
+    min-height: 82px;
+  }
+
+  .table-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pagination {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pagination-info,
+  .pagination-actions {
+    gap: 8px;
+  }
+}
+</style>
