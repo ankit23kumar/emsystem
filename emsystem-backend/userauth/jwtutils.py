@@ -15,6 +15,7 @@ def create_access_token(user):
 
     payload = {
         "user_id": user.user_id,
+        "email":user.email, #email added for jwt
         "iat": now,
         "exp": now + timedelta(
             minutes=settings.JWT_ACCESS_TOKEN_MINUTES
