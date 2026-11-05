@@ -12,21 +12,25 @@ export function saveSession(data) {
     throw new Error('The server returned an invalid login response.')
   }
 
-  sessionStorage.setItem(TOKEN_KEY, token)
-  sessionStorage.setItem(USER_KEY, JSON.stringify(user))
-  sessionStorage.setItem(EXPIRY_KEY, String(Date.now() + lifetime * 1000))
+  localStorage.setItem(TOKEN_KEY, token)
+  localStorage.setItem(USER_KEY, JSON.stringify(user))
+  localStorage.setItem(
+    EXPIRY_KEY,
+    String(Date.now() + lifetime * 1000)
+  )
 }
 
 export function getToken() {
   if (!isAuthenticated()) return null
-  return sessionStorage.getItem(TOKEN_KEY)
+
+  return localStorage.getItem(TOKEN_KEY)
 }
 
 export function getUser() {
   if (!isAuthenticated()) return null
 
   try {
-    return JSON.parse(sessionStorage.getItem(USER_KEY))
+    return JSON.parse(localStorage.getItem(USER_KEY))
   } catch {
     clearSession()
     return null
@@ -34,8 +38,8 @@ export function getUser() {
 }
 
 export function isAuthenticated() {
-  const token = sessionStorage.getItem(TOKEN_KEY)
-  const expiry = Number(sessionStorage.getItem(EXPIRY_KEY))
+  const token = localStorage.getItem(TOKEN_KEY)
+  const expiry = Number(localStorage.getItem(EXPIRY_KEY))
 
   if (!token || !Number.isFinite(expiry) || Date.now() >= expiry) {
     clearSession()
@@ -46,6 +50,11 @@ export function isAuthenticated() {
 }
 
 export function clearSession() {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(USER_KEY)
+  localStorage.removeItem(EXPIRY_KEY)
+
+  // Clean up old sessionStorage data from previous versions.
   sessionStorage.removeItem(TOKEN_KEY)
   sessionStorage.removeItem(USER_KEY)
   sessionStorage.removeItem(EXPIRY_KEY)
