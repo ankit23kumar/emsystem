@@ -1,118 +1,110 @@
-
 <script setup>
-import { reactive, ref, watch, computed } from 'vue'
-import api from '../services/api'
-import { resetPassword } from '../services/authService.js';
-import PasswordInput from './PasswordInput.vue'
+import { reactive, ref, computed } from "vue";
+import { resetPassword } from "../services/authService.js";
+import { useToast } from "../composables/useToast";
+import PasswordInput from "./PasswordInput.vue";
 
-const emit = defineEmits(['close', 'reset-success'])
+const emit = defineEmits(["close", "reset-success"]);
+
+const { showToast } = useToast();
 
 const form = reactive({
-  email: '',
-  new_password: '',
-  confirm_password: '',
-})
+  email: "",
+  new_password: "",
+  confirm_password: "",
+});
+
+const errors = reactive({
+  email: "",
+  password: "",
+  confirmPassword: "",
+});
 
 const passwordsMismatch = computed(() => {
   return (
     form.confirm_password.length > 0 &&
     form.new_password !== form.confirm_password
-  )
-})
+  );
+});
 
-const loading = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
+const loading = ref(false);
 
-watch(
-  () => [form.email, form.new_password, form.confirm_password],
-  () => {
-    errorMessage.value = ''
-    successMessage.value = ''
-  },
-)
+function clearErrors() {
+  errors.email = "";
+  errors.password = "";
+  errors.confirmPassword = "";
+}
 
 function closeModal() {
-  if (loading.value) return
-  emit('close')
+  if (loading.value) return;
+  emit("close");
 }
 
 async function handlePasswordReset() {
-  errorMessage.value = ''
-  successMessage.value = ''
+  clearErrors();
 
-  const email = form.email.trim()
+  const email = form.email.trim();
 
   if (!email) {
-    errorMessage.value = 'Please enter your email address.'
-    return
+    errors.email = "Please enter your email address.";
+    return;
   }
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errorMessage.value = 'Please enter a valid email address.'
-    return
+    errors.email = "Please enter a valid email address.";
+    return;
   }
 
-  if (
-    form.new_password.length < 8 ||
-    form.new_password.length > 128
-  ) {
-    errorMessage.value =
-      'Password must be between 8 and 128 characters.'
-    return
+  if (form.new_password.length < 8 || form.new_password.length > 128) {
+    errors.password = "Password must be between 8 and 128 characters.";
+    return;
   }
 
   if (form.new_password !== form.confirm_password) {
-    errorMessage.value = 'Passwords do not match.'
-    return
+    errors.confirmPassword = "Passwords do not match.";
+    return;
   }
 
-  loading.value = true
+  loading.value = true;
 
   try {
-    const response = await resetPassword( {
+    await resetPassword({
       email,
       new_password: form.new_password,
       confirm_password: form.confirm_password,
-    })
+    });
 
-    successMessage.value =
-      response.data?.message || 'Password reset successful. Please log in.'
+    form.new_password = "";
+    form.confirm_password = "";
 
-    form.new_password = ''
-    form.confirm_password = ''
-
-    // Notify the parent after displaying success.
-    emit('reset-success')
+    // LoginView handles closing the modal and showing the success toast.
+    emit("reset-success");
   } catch (error) {
-    const data = error.response?.data
+    const data = error.response?.data;
 
-    if (data?.error) {
-      errorMessage.value = data.error
-    } else if (data?.message) {
-      errorMessage.value = data.message
+    if (data?.error || data?.message) {
+      showToast(data.error || data.message, "error");
     } else if (error.response) {
-      errorMessage.value =
-        `Password reset failed (HTTP ${error.response.status}).`
-    } else if (error.code === 'ECONNABORTED') {
-      errorMessage.value =
-        'The request timed out. Please try again.'
+      showToast(
+        `Password reset failed (HTTP ${error.response.status}).`,
+        "error",
+      );
+    } else if (error.code === "ECONNABORTED") {
+      showToast("The request timed out. Please try again.", "error");
     } else {
-      errorMessage.value =
-        'Unable to connect to the server. Check that Django is running.'
+      showToast(
+        "Unable to connect to the server. Check that Django is running.",
+        "error",
+      );
     }
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 </script>
 
 <template>
-  <div
-    class="modal-overlay"
-    @click.self="closeModal"
-    @keydown.esc="closeModal"
-  >
+  <div class="modal-overlay" @click.self="closeModal" @keydown.esc="closeModal">
     <section
       class="reset-modal"
       role="dialog"
@@ -147,7 +139,14 @@ async function handlePasswordReset() {
             autocomplete="email"
             required
             :disabled="loading"
+            :class="{ 'input-error': errors.email }"
+            :aria-invalid="Boolean(errors.email)"
+            @input="errors.email = ''"
           />
+
+          <small v-if="errors.email" class="field-error" role="alert">
+            {{ errors.email }}
+          </small>
         </div>
 
         <div class="form-group">
@@ -161,12 +160,15 @@ async function handlePasswordReset() {
             :required="true"
             :disabled="loading"
           />
+
+          <small v-if="errors.password" class="field-error" role="alert">
+            {{ errors.password }}
+          </small>
         </div>
 
         <div class="form-group">
-          <label for="reset-confirm-password">
-            Confirm new password
-          </label>
+          <label for="reset-confirm-password"> Confirm new password </label>
+
           <PasswordInput
             id="reset-confirm-password"
             v-model="form.confirm_password"
@@ -176,37 +178,18 @@ async function handlePasswordReset() {
             :required="true"
             :disabled="loading"
           />
-          <p
-            v-if="passwordsMismatch"
-                class="password-warning"
-                role="alert"
-            >
-                Passwords do not match.
-          </p>
+
+          <small
+            v-if="errors.confirmPassword || passwordsMismatch"
+            class="field-error"
+            role="alert"
+          >
+            {{ errors.confirmPassword || "Passwords do not match." }}
+          </small>
         </div>
 
-        <p
-          v-if="errorMessage"
-          class="feedback error"
-          role="alert"
-        >
-          {{ errorMessage }}
-        </p>
-
-        <p
-          v-if="successMessage"
-          class="feedback success"
-          role="status"
-        >
-          {{ successMessage }}
-        </p>
-
-        <button
-          type="submit"
-          class="reset-button"
-          :disabled="loading"
-        >
-          {{ loading ? 'Resetting password...' : 'Reset password' }}
+        <button type="submit" class="reset-button" :disabled="loading">
+          {{ loading ? "Resetting password..." : "Reset password" }}
         </button>
       </form>
 
@@ -385,5 +368,17 @@ async function handlePasswordReset() {
   .reset-modal {
     padding: 28px 20px;
   }
+}
+
+.input-error {
+  border-color: #d92d20 !important;
+}
+
+.field-error {
+  display: block;
+  margin-top: 6px;
+  color: #b42318;
+  font-size: 13px;
+  line-height: 1.4;
 }
 </style>

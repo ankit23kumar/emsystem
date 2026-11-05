@@ -1,10 +1,14 @@
 
 import { createRouter, createWebHistory } from 'vue-router'
 
-import LoginView from '../views/LoginView.vue'
-import RegisterView from '../views/RegisterView.vue'
-import DashboardView from '../views/DashboardView.vue'
-import UserListView from '../views/UserListView.vue'
+// import LoginView from '../views/LoginView.vue'
+// import RegisterView from '../views/RegisterView.vue'
+// import DashboardView from '../views/DashboardView.vue'
+// import UserListView from '../views/UserListView.vue'
+const LoginView = () => import('../views/LoginView.vue')
+const RegisterView = () => import('../views/RegisterView.vue')
+const DashboardView = () => import('../views/DashboardView.vue')
+const UserListView = () => import('../views/UserListView.vue')
 import { isAuthenticated } from '../services/auth'
 // import UserFormView from '../views/UserFormView.vue'
 

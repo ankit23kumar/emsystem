@@ -15,6 +15,14 @@ export function useUsers(router) {
   const hasNext = ref(false)
   const hasPrevious = ref(false)
 
+  // Server-side search, sorting and filtering options
+  const filters = ref({
+    search: '',
+    sort_by: 'user_id',  //sort_by: 'first_name',
+    order: 'asc',
+    letter: '',
+  })
+
   async function loadUsers(page = 1) {
     loading.value = true
     errorMessage.value = ''
@@ -23,6 +31,10 @@ export function useUsers(router) {
       const response = await getUsers({
         page,
         page_size: pageSize.value,
+        search: filters.value.search,
+        sort_by: filters.value.sort_by,
+        order: filters.value.order,
+        letter: filters.value.letter,
       })
 
       const data = response.data
@@ -34,6 +46,7 @@ export function useUsers(router) {
       totalPages.value = pagination.total_pages
       hasNext.value = pagination.has_next
       hasPrevious.value = pagination.has_previous
+
     } catch (error) {
       const status = error.response?.status
 
@@ -59,6 +72,16 @@ export function useUsers(router) {
     }
   }
 
+  // Update filters and reload from page 1
+  async function updateFilters(newFilters) {
+    filters.value = {
+      ...filters.value,
+      ...newFilters,
+    }
+
+    await loadUsers(1)
+  }
+
   return {
     users,
     loading,
@@ -69,6 +92,8 @@ export function useUsers(router) {
     totalPages,
     hasNext,
     hasPrevious,
+    filters,
     loadUsers,
+    updateFilters,
   }
 }

@@ -1,17 +1,23 @@
-
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { clearSession, getUser } from '../services/auth'
-import { useUsers } from '../composables/useUsers'
-import UserFormModal from '../components/UserFormModal.vue'
-import { deleteUser, getMyProfile, updateUser} from '../services/userService'
+import { computed, onMounted, ref, watch, defineAsyncComponent } from "vue";
+import { useRouter } from "vue-router";
+import { clearSession, getUser } from "../services/auth";
+import { useUsers } from "../composables/useUsers";
+import UserFormModal from "../components/UserFormModal.vue";
+import { deleteUser, getMyProfile, updateUser } from "../services/userService";
+import ConfirmationModal from "../components/ConfirmationModal.vue";
+import { useToast } from "../composables/useToast";
 
-const router = useRouter()
+const UserGrid = defineAsyncComponent(
+  () => import("../components/UserGrid.vue"),
+);
+
+const router = useRouter();
+const { showToast } = useToast();
 
 const {
   users,
-  loading :usersLoading,
+  loading: usersLoading,
   errorMessage,
   currentPage,
   pageSize,
@@ -19,325 +25,447 @@ const {
   totalPages,
   hasNext,
   hasPrevious,
+  filters,
   loadUsers,
-} = useUsers(router)
+  updateFilters,
+} = useUsers(router);
 
-const user = ref(getUser())
+watch(errorMessage, (message) => {
+  if (message) {
+    showToast(message, "error");
+  }
+});
+
+function statusBadgeRenderer(params) {
+  const isValid = params.value === "Valid";
+
+  const pill = document.createElement("span");
+  pill.className = `status-pill ${isValid ? "status-valid" : "status-invalid"}`;
+
+  const dot = document.createElement("span");
+  dot.className = "status-dot";
+
+  pill.appendChild(dot);
+  pill.appendChild(document.createTextNode(params.value));
+
+  return pill;
+}
+
+function userActionsRenderer(params) {
+  const container = document.createElement("div");
+  container.className = "row-actions";
+
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.className = "edit-button";
+  editButton.textContent = "Edit";
+  editButton.addEventListener("click", () => {
+    params.context.onEdit(params.data);
+  });
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "delete-button";
+  deleteButton.textContent = "Delete";
+  deleteButton.addEventListener("click", () => {
+    params.context.onDelete(params.data);
+  });
+
+  container.append(editButton, deleteButton);
+
+  return container;
+}
+
+const searchInput = ref("");
+
+const user = ref(getUser());
 // const users = ref([])
-const loading = ref(true)
+const loading = ref(true);
 // const usersLoading = ref(false)
-const savingProfile = ref(false)
+const savingProfile = ref(false);
 
-// const errorMessage = ref('')
-const successMessage = ref('')
-const profileError = ref('')
-const profileSuccess = ref('')
+const showProfileForm = ref(false);
 
-const showProfileForm = ref(false)
-const showPasswordNotice = ref(null)
+const showDeleteConfirmation = ref(false);
+const userToDelete = ref(null);
+const deletingUser = ref(false);
 
-// const currentPage = ref(1)
-// const pageSize = ref(10)
-// const totalUsers = ref(0)
-// const totalPages = ref(0)
-// const hasNext = ref(false)
-// const hasPrevious = ref(false)
-
-const showUserModal = ref(false)
-const userFormMode = ref('create')
-const selectedUser = ref(null)
+const showUserModal = ref(false);
+const userFormMode = ref("create");
+const selectedUser = ref(null);
 
 function openCreateUserModal() {
-  selectedUser.value = null
-  userFormMode.value = 'create'
-  showUserModal.value = true
+  selectedUser.value = null;
+  userFormMode.value = "create";
+  showUserModal.value = true;
 }
 
 function openEditUserModal(item) {
-  selectedUser.value = { ...item }
-  userFormMode.value = 'edit'
-  showUserModal.value = true
+  selectedUser.value = { ...item };
+  userFormMode.value = "edit";
+  showUserModal.value = true;
 }
 
 async function handleUserSaved() {
-  showUserModal.value = false
-  selectedUser.value = null
-  successMessage.value =
-    userFormMode.value === 'create'
-      ? 'User created successfully.'
-      : 'User updated successfully.'
+  showUserModal.value = false;
+  selectedUser.value = null;
+  showToast(
+    userFormMode.value === "create"
+      ? "User created successfully."
+      : "User updated successfully.",
+    "success",
+  );
 
-  await loadUsers(currentPage.value)
+  await loadUsers(currentPage.value);
 }
 
 const profileForm = ref({
-  first_name: '',
-  last_name: '',
-  email: '',
-})
+  first_name: "",
+  last_name: "",
+  email: "",
+});
 
-const profileErrors = ref({})
+const profileErrors = ref({});
 
 const fullName = computed(() => {
-  return `${user.value?.first_name || ''} ${user.value?.last_name || ''}`.trim()
-})
+  return `${user.value?.first_name || ""} ${user.value?.last_name || ""}`.trim();
+});
 
 const initials = computed(() => {
-  const first = user.value?.first_name?.[0] || ''
-  const last = user.value?.last_name?.[0] || ''
-  return (first + last).toUpperCase() || 'U'
-})
+  const first = user.value?.first_name?.[0] || "";
+  const last = user.value?.last_name?.[0] || "";
+  return (first + last).toUpperCase() || "U";
+});
 
 // These counts describe the users currently loaded on this page.
 // Total users comes from the backend's pagination metadata.
-const validOnPage = computed(() =>
-  users.value.filter(isAccountValid).length
-)
+const validOnPage = computed(() => users.value.filter(isAccountValid).length);
 
-const invalidOnPage = computed(() =>
-  users.value.filter(user => !isAccountValid(user)).length
-)
+const invalidOnPage = computed(
+  () => users.value.filter((user) => !isAccountValid(user)).length,
+);
 
 const newThisMonthOnPage = computed(() => {
-  const now = new Date()
+  const now = new Date();
 
-  return users.value.filter(item => {
-    if (!item.created_at) return false
+  return users.value.filter((item) => {
+    if (!item.created_at) return false;
 
-    const date = new Date(item.created_at)
+    const date = new Date(item.created_at);
 
     return (
       !Number.isNaN(date.getTime()) &&
       date.getMonth() === now.getMonth() &&
       date.getFullYear() === now.getFullYear()
-    )
-  }).length
-})
+    );
+  }).length;
+});
 
 function isAccountValid(item) {
-  if (!item.valid_until) return false
+  if (!item.valid_until) return false;
 
-  const expiry = new Date(item.valid_until)
-  if (Number.isNaN(expiry.getTime())) return false
+  const expiry = new Date(item.valid_until);
+  if (Number.isNaN(expiry.getTime())) return false;
 
   // Treat an account as valid through its expiry date.
-  expiry.setHours(23, 59, 59, 999)
-  return expiry >= new Date()
+  expiry.setHours(23, 59, 59, 999);
+  return expiry >= new Date();
 }
 
 function formatDate(value) {
-  if (!value) return '—'
+  if (!value) return "—";
 
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
 
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(date)
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 function logout() {
-  clearSession()
-  router.replace('/')
+  clearSession();
+  router.replace("/");
 }
 
 async function loadProfile() {
   try {
-    const response = await getMyProfile()
+    const response = await getMyProfile();
 
     // Preserve user_id from the login session because /me may not return it.
     user.value = {
       ...user.value,
       ...response.data.user,
-    }
+    };
   } catch (error) {
     if (error.response?.status === 401) {
-      clearSession()
-      router.replace('/')
-      return
+      clearSession();
+      router.replace("/");
+      return;
     }
 
-    errorMessage.value =
+    showToast(
       error.response?.data?.error ||
-      'Unable to load your profile.'
+        error.response?.data?.message ||
+        "Unable to load your profile.",
+      "error",
+    );
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
-
-
 function openProfileForm() {
-  profileErrors.value = {}
-  profileError.value = ''
-  profileSuccess.value = ''
+  profileErrors.value = {};
 
   profileForm.value = {
-    first_name: user.value?.first_name || '',
-    last_name: user.value?.last_name || '',
-    email: user.value?.email || '',
-  }
+    first_name: user.value?.first_name || "",
+    last_name: user.value?.last_name || "",
+    email: user.value?.email || "",
+  };
 
-  showProfileForm.value = true
+  showProfileForm.value = true;
 }
 
 function validateProfile() {
-  const errors = {}
-  const first = profileForm.value.first_name.trim()
-  const last = profileForm.value.last_name.trim()
-  const email = profileForm.value.email.trim()
+  const errors = {};
+  const first = profileForm.value.first_name.trim();
+  const last = profileForm.value.last_name.trim();
+  const email = profileForm.value.email.trim();
 
   if (!first) {
-    errors.first_name = 'First name is required.'
+    errors.first_name = "First name is required.";
   } else if (first.length > 40) {
-    errors.first_name = 'First name cannot exceed 40 characters.'
+    errors.first_name = "First name cannot exceed 40 characters.";
   }
 
   if (!last) {
-    errors.last_name = 'Last name is required.'
+    errors.last_name = "Last name is required.";
   } else if (last.length > 40) {
-    errors.last_name = 'Last name cannot exceed 40 characters.'
+    errors.last_name = "Last name cannot exceed 40 characters.";
   }
 
   if (!email) {
-    errors.email = 'Email is required.'
+    errors.email = "Email is required.";
   } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errors.email = 'Enter a valid email address.'
+    errors.email = "Enter a valid email address.";
   }
 
-  profileErrors.value = errors
-  return Object.keys(errors).length === 0
+  profileErrors.value = errors;
+  return Object.keys(errors).length === 0;
 }
 
-
-
 async function saveProfile() {
-  profileError.value = ''
-  profileSuccess.value = ''
+  profileError.value = "";
+  profileSuccess.value = "";
 
-  if (!validateProfile()) return
+  if (!validateProfile()) return;
 
-  const userId = user.value?.user_id
+  const userId = user.value?.user_id;
 
   if (!userId) {
-    profileError.value =
-      'Your user ID is unavailable. Please log out and log in again.'
-    return
+    showToast(
+      "Your user ID is unavailable. Please log out and log in again.",
+      "error",
+    );
+    return;
   }
 
-  savingProfile.value = true
+  savingProfile.value = true;
 
   try {
     const payload = {
       first_name: profileForm.value.first_name.trim(),
       last_name: profileForm.value.last_name.trim(),
       email: profileForm.value.email.trim(),
-    }
+    };
 
-    const response = await updateUser(userId, payload)
+    const response = await updateUser(userId, payload);
 
     user.value = {
       ...user.value,
       ...(response.data.user || response.data),
       ...payload,
-    }
+    };
 
     // Keep the locally stored session profile in sync with the edit.
     const storedUser = {
       ...getUser(),
       ...user.value,
-    }
+    };
 
-    sessionStorage.setItem('emsystem_user', JSON.stringify(storedUser))
+    sessionStorage.setItem("emsystem_user", JSON.stringify(storedUser));
 
-    profileSuccess.value = 'Profile updated successfully.'
-    showProfileForm.value = false
-    successMessage.value = 'Your profile was updated successfully.'
+    showProfileForm.value = false;
+
+    showToast(
+      response.data.message || "Profile updated successfully.",
+      "success",
+    );
   } catch (error) {
     if (error.response?.status === 401) {
-      clearSession()
-      router.replace('/')
-      return
+      clearSession();
+      router.replace("/");
+      return;
     }
 
     const message =
       error.response?.data?.error ||
       error.response?.data?.message ||
-      'Unable to update your profile.'
+      "Unable to update your profile.";
 
     if (error.response?.status === 409) {
       profileErrors.value = {
         ...profileErrors.value,
         email: message,
-      }
+      };
     } else {
-      profileError.value = message
+      showToast(message, "error");
     }
   } finally {
-    savingProfile.value = false
+    savingProfile.value = false;
   }
 }
 
-async function handleDeleteUser(item) {
-  const confirmed = window.confirm(
-    `Delete ${item.first_name} ${item.last_name} (${item.email})? This cannot be undone.`
-  )
+// Open confirmation modal when Delete is clicked.
+function handleDeleteUser(item) {
+  userToDelete.value = item;
+  showDeleteConfirmation.value = true;
+}
 
-  if (!confirmed) return
+// Execute deletion only after confirmation.
+async function confirmDeleteUser() {
+  if (!userToDelete.value || deletingUser.value) return;
 
-  errorMessage.value = ''
-  successMessage.value = ''
+  const item = userToDelete.value;
+
+  deletingUser.value = true;
 
   try {
-    const response = await deleteUser(item.user_id)
+    const response = await deleteUser(item.user_id);
 
     const nextPage =
       users.value.length === 1 && currentPage.value > 1
         ? currentPage.value - 1
-        : currentPage.value
+        : currentPage.value;
 
-    await loadUsers(nextPage)
+    await loadUsers(nextPage);
 
-    successMessage.value =
-      response.data.message || 'User deleted successfully.'
+    showToast(response.data.message || "User deleted successfully.", "success");
+
+    showDeleteConfirmation.value = false;
+    userToDelete.value = null;
   } catch (error) {
     if (error.response?.status === 401) {
-      clearSession()
-      router.replace('/')
-      return
+      clearSession();
+      router.replace("/");
+      return;
     }
 
-    errorMessage.value =
+    showToast(
       error.response?.data?.error ||
-      error.response?.data?.message ||
-      'Unable to delete this user.'
-
-    console.error('Delete failed:', error.response?.data || error.message)
+        error.response?.data?.message ||
+        "Unable to delete this user.",
+      "error",
+    );
+    console.error("Delete failed:", error.response?.data || error.message);
+  } finally {
+    deletingUser.value = false;
   }
 }
 
+async function handleFirstNameSort(order) {
+  if (order === "default") {
+    await updateFilters({
+      sort_by: "user_id",
+      order: "asc",
+    });
+    return;
+  }
+
+  await updateFilters({
+    sort_by: "first_name",
+    order,
+  });
+}
+
+async function handleFirstNameSortToggle() {
+  if (filters.value.sort_by !== "first_name") {
+    await updateFilters({
+      sort_by: "first_name",
+      order: "asc",
+    });
+  } else if (filters.value.order === "asc") {
+    await updateFilters({
+      sort_by: "first_name",
+      order: "desc",
+    });
+  } else {
+    await updateFilters({
+      sort_by: "user_id",
+      order: "asc",
+    });
+  }
+}
+
+async function handleFirstNameLetter(letter) {
+  // selectedLetter.value = letter;
+
+  await updateFilters({
+    letter,
+  });
+}
+
+async function handleSearch() {
+  await updateFilters({
+    search: searchInput.value.trim(),
+  });
+}
+
+async function handleHeaderClick(event) {
+  const columnId = event.column?.getColId();
+
+  // Only respond to a double-click on First name header.
+  if (columnId !== "first_name" || event.event?.detail !== 2) {
+    return;
+  }
+
+  const nextOrder = filters.value.order === "asc" ? "desc" : "asc";
+
+  await updateFilters({
+    sort_by: "first_name",
+    order: nextOrder,
+  });
+}
+
+// async function handleLetterFilter() {
+//   await updateFilters({
+//     letter: selectedLetter.value,
+//   });
+// }
+
 async function changePageSize(event) {
-  pageSize.value = Number(event.target.value)
-  await loadUsers(1)
+  pageSize.value = Number(event.target.value);
+  await loadUsers(1);
 }
 
 async function previousPage() {
   if (hasPrevious.value && !usersLoading.value) {
-    await loadUsers(currentPage.value - 1)
+    await loadUsers(currentPage.value - 1);
   }
 }
 
 async function nextPage() {
   if (hasNext.value && !usersLoading.value) {
-    await loadUsers(currentPage.value + 1)
+    await loadUsers(currentPage.value + 1);
   }
 }
 
 onMounted(async () => {
-  await Promise.all([loadProfile(), loadUsers()])
-})
+  await Promise.all([loadProfile(), loadUsers()]);
+});
 </script>
 
 <template>
@@ -349,7 +477,7 @@ onMounted(async () => {
       </a>
 
       <div class="topbar-user">
-        <span>{{ fullName || 'User' }}</span>
+        <span>{{ fullName || "User" }}</span>
         <span class="avatar-small">{{ initials }}</span>
         <button class="logout-button" @click="logout">Log out</button>
       </div>
@@ -360,13 +488,6 @@ onMounted(async () => {
         <h1>User Dashboard</h1>
         <p>Overview of your account and registered users</p>
       </div>
-
-      <p v-if="successMessage" class="notice success" role="status">
-        {{ successMessage }}
-      </p>
-      <p v-if="errorMessage" class="notice error" role="alert">
-        {{ errorMessage }}
-      </p>
 
       <section class="profile-card">
         <div class="profile-avatar-area">
@@ -381,15 +502,15 @@ onMounted(async () => {
         <div v-else class="profile-details">
           <div class="detail">
             <span class="detail-label">First name</span>
-            <strong>{{ user?.first_name || '—' }}</strong>
+            <strong>{{ user?.first_name || "—" }}</strong>
           </div>
           <div class="detail">
             <span class="detail-label">Last name</span>
-            <strong>{{ user?.last_name || '—' }}</strong>
+            <strong>{{ user?.last_name || "—" }}</strong>
           </div>
           <div class="detail">
             <span class="detail-label">Email</span>
-            <strong class="email-value">{{ user?.email || '—' }}</strong>
+            <strong class="email-value">{{ user?.email || "—" }}</strong>
           </div>
           <div class="detail">
             <span class="detail-label">Password</span>
@@ -452,57 +573,33 @@ onMounted(async () => {
       <section class="users-card">
         <div class="table-heading">
           <h2>User Management</h2>
+
           <button class="primary-button" @click="openCreateUserModal">
             + Add New User
           </button>
         </div>
 
-        <div v-if="usersLoading" class="table-state">Loading users...</div>
-        <div v-else-if="users.length === 0" class="table-state">
-          No users found.
+        <div class="grid-toolbar">
+          <input
+            v-model="searchInput"
+            type="search"
+            placeholder="Search name or email..."
+            class="grid-search"
+            @input="handleSearch"
+          />
         </div>
 
-        <div v-else class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>First name</th>
-                <th>Last name</th>
-                <th>Email</th>
-                <th>Password</th>
-                <th>Valid</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              <tr v-for="item in users" :key="item.user_id">
-                <td><strong>{{ item.first_name }}</strong></td>
-                <td>{{ item.last_name }}</td>
-                <td>{{ item.email }}</td>
-                <td>{{ item.password }}<strong class="password-dots">{{ user?.password || '••••••••••' }}</strong></td>
-                
-                <td>
-                  <span
-                    class="status-badge"
-                    :class="isAccountValid(item) ? 'valid' : 'invalid'"
-                  >
-                    {{ isAccountValid(item) ? 'Valid' : 'Invalid' }}
-                  </span>
-                </td>
-                <td>
-                  <div class="row-actions">
-                    <button class="outline-button" @click="openEditUserModal(item)">
-                      Edit
-                    </button>
-                    <button class="delete-button" @click="handleDeleteUser(item)">
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="ag-grid-wrapper">
+          <UserGrid
+            :users="users"
+            :loading="usersLoading"
+            :filters="filters"
+            :on-edit="openEditUserModal"
+            :on-delete="handleDeleteUser"
+            :on-sort-first-name="handleFirstNameSort"
+            :on-toggle-first-name-sort="handleFirstNameSortToggle"
+            :on-filter-first-name-letter="handleFirstNameLetter"
+          />
         </div>
 
         <footer class="pagination">
@@ -572,13 +669,6 @@ onMounted(async () => {
           </button>
         </div>
 
-        <p v-if="profileError" class="notice error" role="alert">
-          {{ profileError }}
-        </p>
-        <p v-if="profileSuccess" class="notice success" role="status">
-          {{ profileSuccess }}
-        </p>
-
         <form @submit.prevent="saveProfile" novalidate>
           <div class="form-field">
             <label for="first-name">First name</label>
@@ -640,12 +730,27 @@ onMounted(async () => {
               class="primary-button"
               :disabled="savingProfile"
             >
-              {{ savingProfile ? 'Saving...' : 'Save Changes' }}
+              {{ savingProfile ? "Saving..." : "Save Changes" }}
             </button>
           </div>
         </form>
       </section>
     </div>
+    <ConfirmationModal
+      v-model="showDeleteConfirmation"
+      title="Delete User?"
+      :message="
+        userToDelete
+          ? `Are you sure you want to delete ${userToDelete.first_name} ${userToDelete.last_name} (${userToDelete.email})? This action cannot be undone.`
+          : 'Are you sure you want to delete this user?'
+      "
+      confirm-text="Delete User"
+      cancel-text="Cancel"
+      variant="danger"
+      :loading="deletingUser"
+      @confirm="confirmDeleteUser"
+      @cancel="userToDelete = null"
+    />
     <UserFormModal
       v-if="showUserModal"
       :mode="userFormMode"
@@ -1032,6 +1137,26 @@ tbody tr:hover {
   background: #fef2f2;
 }
 
+.edit-button {
+  border: 1px solid #2864ed;
+  border-radius: 7px;
+  background: #fff;
+  color: #2864ed;
+  padding: 8px 13px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.edit-button:hover {
+  background: #eff6ff;
+}
+
+.edit-button,
+.delete-button {
+  white-space: nowrap;
+}
+
 .password-cell {
   position: relative;
   display: flex;
@@ -1312,5 +1437,154 @@ tbody tr:hover {
   .pagination-actions {
     gap: 8px;
   }
+}
+
+.grid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px 16px;
+}
+
+.grid-search,
+.letter-filter {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  background: #fff;
+  color: #344054;
+  font-size: 13px;
+}
+
+.grid-search {
+  width: min(100%, 320px);
+}
+
+.letter-filter {
+  min-width: 170px;
+}
+
+.grid-search:focus,
+.letter-filter:focus {
+  outline: 2px solid #2864ed30;
+  border-color: #2864ed;
+}
+
+@media (max-width: 600px) {
+  .grid-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .grid-search,
+  .letter-filter {
+    width: 100%;
+  }
+}
+
+.ag-grid-wrapper {
+  width: 100%;
+  height: 500px;
+  padding: 0 12px;
+}
+
+.ag-grid-wrapper :deep(.ag-root-wrapper) {
+  border: 1px solid #e1e5eb;
+  border-radius: 8px;
+}
+
+.ag-grid-wrapper :deep(.ag-header) {
+  background: #f8fafc;
+}
+
+.ag-grid-wrapper :deep(.ag-header-cell-text) {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.ag-grid-wrapper :deep(.ag-cell) {
+  display: flex;
+  align-items: center;
+  color: #344054;
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .ag-grid-wrapper {
+    height: 450px;
+    padding: 0 8px;
+  }
+}
+
+/* Action buttons */
+:deep(.row-actions) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+}
+
+:deep(.row-actions button) {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+:deep(.row-actions .edit-button) {
+  border: 1px solid #2864ed;
+  background: #eff6ff;
+  color: #2864ed;
+}
+
+:deep(.row-actions .edit-button:hover) {
+  background: #dbeafe;
+}
+
+:deep(.row-actions .delete-button) {
+  border: 1px solid #ef4444;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+:deep(.row-actions .delete-button:hover) {
+  background: #fee2e2;
+}
+
+/* Account status badges */
+:deep(.status-pill) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 76px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+:deep(.status-valid) {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+:deep(.status-invalid) {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+:deep(.status-dot) {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 </style>

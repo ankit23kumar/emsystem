@@ -1,89 +1,106 @@
-
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import api from '../services/api'
-import { registerUser } from '../services/authService.js'
-import PasswordInput from '../components/PasswordInput.vue'
+import { ref, reactive } from "vue";
+import { useRouter } from "vue-router";
+import { registerUser } from "../services/authService.js";
+import { useToast } from "../composables/useToast";
+import PasswordInput from "../components/PasswordInput.vue";
 
-const router = useRouter()
+const router = useRouter();
+const { showToast } = useToast();
 
-const firstName = ref('')
-const lastName = ref('')
-const email = ref('')
-const password = ref('')
-const confirmPassword = ref('')
+const firstName = ref("");
+const lastName = ref("");
+const email = ref("");
+const password = ref("");
+const confirmPassword = ref("");
 
-const loading = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
+const loading = ref(false);
+const errors = reactive({
+  email: "",
+});
 
 async function handleRegister() {
-  errorMessage.value = ''
-  successMessage.value = ''
+  errors.email = "";
 
-  const first = firstName.value.trim()
-  const last = lastName.value.trim()
-  const normalizedEmail = email.value.trim().toLowerCase()
+  const first = firstName.value.trim();
+  const last = lastName.value.trim();
+  const normalizedEmail = email.value.trim().toLowerCase();
 
-  if (!first || !last || !normalizedEmail || !password.value || !confirmPassword.value) {
-    errorMessage.value = 'Please fill in all fields.'
-    return
+  // Client-side validation
+  if (
+    !first ||
+    !last ||
+    !normalizedEmail ||
+    !password.value ||
+    !confirmPassword.value
+  ) {
+    showToast("Please fill in all fields.", "warning");
+    return;
   }
 
   if (first.length > 30 || last.length > 30) {
-    errorMessage.value = 'First and last names must be 30 characters or fewer.'
-    return
+    showToast(
+      "First and last names must be 30 characters or fewer.",
+      "warning",
+    );
+    return;
   }
 
   if (password.value.length < 8 || password.value.length > 128) {
-    errorMessage.value = 'Password must be between 8 and 128 characters.'
-    return
+    showToast("Password must be between 8 and 128 characters.", "warning");
+    return;
   }
 
   if (password.value !== confirmPassword.value) {
-    errorMessage.value = 'Passwords do not match.'
-    return
+    showToast("Passwords do not match.", "warning");
+    return;
   }
 
-  loading.value = true
+  loading.value = true;
 
   try {
-    const response = await registerUser( {
+    const response = await registerUser({
       first_name: first,
       last_name: last,
       email: normalizedEmail,
       password: password.value,
-    })
+    });
 
-    successMessage.value =
-      response.data.message || 'Registration successful! You can now log in.'
+    showToast(
+      response.data.message || "Registration successful! You can now log in.",
+      "success",
+    );
 
-    // Do not automatically log in or store a token here.
-    password.value = ''
-    confirmPassword.value = ''
+    // Registration does not automatically log in the user.
+    password.value = "";
+    confirmPassword.value = "";
 
-    // Show the success message briefly, then return to login.
+    // Return to login after displaying the success notification.
     setTimeout(() => {
-      router.push('/')
-    }, 1500)
+      router.push("/");
+    }, 1500);
   } catch (error) {
-    const status = error.response?.status
-    const data = error.response?.data
+    const status = error.response?.status;
+    const data = error.response?.data;
+
+    const message =
+      data?.error || data?.message || "Registration failed. Please try again.";
 
     if (status === 409) {
-      errorMessage.value = data?.error || 'An account with this email already exists.'
+      // Duplicate email: keep the error associated with the email field.
+      errors.email =
+        data?.error || "An account with this email already exists.";
     } else if (status === 400) {
-      errorMessage.value = data?.error || 'Please check the information you entered.'
-    } else if (error.code === 'ECONNABORTED') {
-      errorMessage.value = 'The request timed out. Please try again.'
+      showToast(message, "warning");
+    } else if (error.code === "ECONNABORTED") {
+      showToast("The request timed out. Please try again.", "error");
     } else if (!error.response) {
-      errorMessage.value = 'Cannot connect to the server. Please try again.'
+      showToast("Cannot connect to the server. Please try again.", "error");
     } else {
-      errorMessage.value = data?.error || 'Registration failed. Please try again.'
+      showToast(message, "error");
     }
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 </script>
@@ -131,11 +148,18 @@ async function handleRegister() {
           <input
             id="email"
             v-model="email"
+            :class="{ 'input-error': errors.email }"
             type="email"
             autocomplete="email"
             placeholder="you@example.com"
             required
+            :aria-invalid="Boolean(errors.email)"
+            @input="errors.email = ''"
           />
+
+          <small v-if="errors.email" class="field-error" role="alert">
+            {{ errors.email }}
+          </small>
         </div>
 
         <div class="form-group">
@@ -147,7 +171,7 @@ async function handleRegister() {
             type="password"
             autocomplete="new-password"
             placeholder="At least 8 characters"
-            :required= "true"
+            :required="true"
           />
         </div>
 
@@ -160,20 +184,13 @@ async function handleRegister() {
             type="password"
             autocomplete="new-password"
             placeholder="Re-enter your password"
-            :required = "true"
+            :required="true"
           />
         </div>
 
-        <p v-if="errorMessage" class="message error" role="alert">
-          {{ errorMessage }}
-        </p>
-
-        <p v-if="successMessage" class="message success" role="status">
-          {{ successMessage }}
-        </p>
 
         <button type="submit" :disabled="loading">
-          {{ loading ? 'Creating account...' : 'Create account' }}
+          {{ loading ? "Creating account..." : "Create account" }}
         </button>
       </form>
 
@@ -262,7 +279,9 @@ async function handleRegister() {
   border-radius: 8px;
   outline: none;
   font-size: 14px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
 .form-group input:focus {
@@ -339,4 +358,16 @@ button:disabled {
     gap: 0;
   }
 }
+
+.input-error {
+  border-color: #d92d20;
+}
+
+.field-error {
+  display: block;
+  margin-top: 6px;
+  color: #b42318;
+  font-size: 12px;
+}
+
 </style>

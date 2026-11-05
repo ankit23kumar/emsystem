@@ -15,7 +15,8 @@ from datetime import timedelta, datetime , time
 from django.utils import timezone
 from django.conf import settings
 from .jwtutils import create_access_token, jwt_required, JWT_ALGORITHM
-
+from django.db.models import Q, CharField, Value
+from django.db.models.functions import Concat
 from .models import User
 
 #Get Method : home , user_list
@@ -28,81 +29,147 @@ def home(request):
     })
 
 
+
 @jwt_required
 def user_list(request):
-    if request.method != 'GET':
-        return JsonResponse (
-            {'error': 'Method Not allowed!'},
+    if request.method != "GET":
+        return JsonResponse(
+            {"error": "Method Not allowed!"},
             status=405
         )
-        
-    #read query parameters
+
+    # Read and validate pagination parameters
     try:
-        page_number = int(request.GET.get("page",1))
-        page_size = int(request.GET.get("page_size",10))
-    except(TypeError, ValueError):
+        page_number = int(request.GET.get("page", 1))
+        page_size = int(request.GET.get("page_size", 10))
+    except (TypeError, ValueError):
         return JsonResponse(
             {"error": "page and page_size must be integers"},
-            status = 400,
+            status=400,
         )
-    
+
     if page_number < 1:
         return JsonResponse(
-            {"error":"page must be at least 1"},
-            status = 400,
+            {"error": "page must be at least 1"},
+            status=400,
         )
-        
-    if not 1 <= page_size <= 100 :
+
+    if not 1 <= page_size <= 100:
         return JsonResponse(
-            {"error":"page must be between 1 and 100"},
-            status = 400,
+            {"error": "page_size must be between 1 and 100"},
+            status=400,
         )
-            
-    queryset = User.objects.order_by("user_id").values(
-        'user_id',
-        'first_name',
-        'last_name',
-        'email',
-        # 'password',
-        'created_at',
-        'valid_until'
+
+    # Read search, sorting and letter parameters
+    search = request.GET.get("search", "").strip()
+    sort_by = request.GET.get("sort_by", "user_id").strip()
+    order = request.GET.get("order", "asc").strip().lower()
+    letter = request.GET.get("letter", "").strip().upper()
+
+    # Validate sorting field
+    allowed_sort_fields = ["user_id", "first_name"]
+
+    if sort_by not in allowed_sort_fields:
+        return JsonResponse(
+            {"error": "Invalid sorting field"},
+            status=400,
+        )
+
+    # Validate sorting order
+    if order not in ["asc", "desc"]:
+        return JsonResponse(
+            {"error": "order must be either asc or desc"},
+            status=400,
+        )
+
+    # Validate first-name letter filter
+    if letter and (
+        len(letter) != 1 or not ("A" <= letter <= "Z")
+    ):
+        return JsonResponse(
+            {"error": "letter must be a single character from A to Z"},
+            status=400,
+        )
+
+    # Start with all users
+    queryset = User.objects.all()
+
+    # Search by first name, last name, full name or email
+    if search:
+        queryset = queryset.annotate(
+            full_name=Concat(
+                "first_name",
+                Value(" "),
+                "last_name",
+                output_field=CharField(),
+            )
+        ).filter(
+            Q(first_name__icontains=search)
+            | Q(last_name__icontains=search)
+            | Q(email__icontains=search)
+            | Q(full_name__icontains=search)
+        )
+
+    # Filter users by first-name initial
+    if letter:
+        queryset = queryset.filter(
+            first_name__istartswith=letter
+        )
+
+    # Apply sorting
+    if sort_by == "first_name":
+        sort_field = "first_name" if order == "asc" else "-first_name"
+        queryset = queryset.order_by(sort_field, "user_id")
+    else:
+        sort_field = "user_id" if order == "asc" else "-user_id"
+        queryset = queryset.order_by(sort_field)
+
+    # Select only required response fields
+    queryset = queryset.values(
+        "user_id",
+        "first_name",
+        "last_name",
+        "email",
+        "created_at",
+        "valid_until",
     )
-    
-    #Divide the queryset into pages
+
+    # Apply pagination after filtering and sorting
     paginator = Paginator(queryset, page_size)
-    
+
     try:
         page_obj = paginator.page(page_number)
     except PageNotAnInteger:
         return JsonResponse(
             {"error": "page number must be an integer"},
-            status = 400,
+            status=400,
         )
     except EmptyPage:
         return JsonResponse(
             {"error": "Page does not exist"},
-            status = 404,
+            status=404,
         )
-        
+
     users = list(page_obj.object_list)
-    
+
     for user in users:
         user["created_at"] = user["created_at"].isoformat()
         user["valid_until"] = user["valid_until"].isoformat()
-    
-    return JsonResponse({
-        "status": "success",
-        "pagination": {
-            "current_page":page_obj.number,
-            "page_size":page_size,
-            "total_users":paginator.count,
-            "total_pages":paginator.num_pages,
-            "has_next": page_obj.has_next(),
-            "has_previous": page_obj.has_previous(),
+
+    return JsonResponse(
+        {
+            "status": "success",
+            "pagination": {
+                "current_page": page_obj.number,
+                "page_size": page_size,
+                "total_users": paginator.count,
+                "total_pages": paginator.num_pages,
+                "has_next": page_obj.has_next(),
+                "has_previous": page_obj.has_previous(),
+            },
+            "users": users,
         },
-        "users": users,
-    },status=200,
-    
+        status=200,
     )
     
     

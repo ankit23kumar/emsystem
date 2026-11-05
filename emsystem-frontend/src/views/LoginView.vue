@@ -1,31 +1,29 @@
 
 <script setup>
 import { ref } from 'vue'
-import api from '../services/api'
 import { useRouter } from 'vue-router'
 import { saveSession } from '../services/auth'
 import { loginUser } from '../services/authService.js'
+import { useToast } from '../composables/useToast'
 import PasswordInput from '../components/PasswordInput.vue'
 import PasswordResetModal from '../components/PasswordResetModal.vue'
 
 const router = useRouter()
+const { showToast } = useToast()
+
 const email = ref('')
 const password = ref('')
 const loading = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
 const loggedInUser = ref(null)
 const showPasswordResetModal = ref(false)
 
 async function handleLogin() {
-  errorMessage.value = ''
-  successMessage.value = ''
   loggedInUser.value = null
 
   const normalizedEmail = email.value.trim()
 
   if (!normalizedEmail || !password.value) {
-    errorMessage.value = 'Please enter your email and password.'
+    showToast('Please enter your email and password.', 'warning')
     return
   }
 
@@ -40,33 +38,52 @@ async function handleLogin() {
     const data = response.data
 
     if (!data.access_token || !data.user) {
-      errorMessage.value = 'The server returned an unexpected login response.'
+      showToast(
+        'The server returned an unexpected login response.',
+        'error'
+      )
       return
     }
 
-    // Temporary success display for this learning step.
-    // JWT storage and application navigation come next.
     loggedInUser.value = data.user
-    successMessage.value = data.message || 'Login successful!'
+
+    // Store the authenticated session.
+    saveSession(data)
+
     password.value = ''
-    saveSession(response.data)
-    router.push('/dashboard')
+
+    showToast(data.message || 'Login successful!', 'success')
+
+    // Navigate to the dashboard.
+    await router.push('/dashboard')
   } catch (error) {
     const responseData = error.response?.data
 
     if (responseData?.code === 'account_expired') {
-      errorMessage.value =
-        responseData.error || 'Your account has expired.'
-    } else if (responseData?.error) {
-      errorMessage.value = responseData.error
+      showToast(
+        responseData.error || 'Your account has expired.',
+        'warning'
+      )
+    } else if (responseData?.error || responseData?.message) {
+      showToast(
+        responseData.error || responseData.message,
+        'error'
+      )
     } else if (error.response) {
-      errorMessage.value =
-        `Request failed with status ${error.response.status}.`
+      showToast(
+        `Request failed with status ${error.response.status}.`,
+        'error'
+      )
     } else if (error.code === 'ECONNABORTED') {
-      errorMessage.value = 'The request timed out. Please try again.'
+      showToast(
+        'The request timed out. Please try again.',
+        'error'
+      )
     } else {
-      errorMessage.value =
-        'Unable to connect to the server. Check that Django is running.'
+      showToast(
+        'Unable to connect to the server. Check that Django is running.',
+        'error'
+      )
     }
   } finally {
     loading.value = false
@@ -75,9 +92,12 @@ async function handleLogin() {
 
 function handlePasswordResetSuccess() {
   showPasswordResetModal.value = false
-  errorMessage.value = ''
-  successMessage.value =
-    'Password reset successful. Please sign in with your new password.'
+
+  showToast(
+    'Password reset successful. Please sign in with your new password.',
+    'success'
+  )
+
   password.value = ''
 }
 </script>
@@ -134,22 +154,7 @@ function handlePasswordResetSuccess() {
             Forgot Password?
           </button>
         </div>
-        <p
-          v-if="errorMessage"
-          class="feedback error"
-          role="alert"
-        >
-          {{ errorMessage }}
-        </p>
-
-        <p
-          v-if="successMessage"
-          class="feedback success"
-          role="status"
-        >
-          {{ successMessage }}
-        </p>
-
+        
         <button
           type="submit"
           class="login-button"

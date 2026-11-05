@@ -1,8 +1,10 @@
-```vue
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import api from '../services/api'
 import PasswordInput from './PasswordInput.vue'
+import { useToast } from '../composables/useToast'
+
+const { showToast } = useToast()
 
 const props = defineProps({
   mode: {
@@ -20,8 +22,6 @@ const emit = defineEmits(['close', 'saved'])
 
 const isEditMode = computed(() => props.mode === 'edit')
 const saving = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
 const errors = reactive({})
 
 const form = reactive({
@@ -41,8 +41,6 @@ function resetForm() {
   form.last_name = props.selectedUser?.last_name || ''
   form.email = props.selectedUser?.email || ''
   form.password = ''
-  errorMessage.value = ''
-  successMessage.value = ''
   form.valid_until = ''
   clearErrors()
 }
@@ -113,9 +111,6 @@ function validate() {
 }
 
 async function submitForm() {
-  errorMessage.value = ''
-  successMessage.value = ''
-
   if (!validate()) return
 
   saving.value = true
@@ -136,41 +131,46 @@ async function submitForm() {
       const userId = props.selectedUser?.user_id
 
       if (!userId) {
-        errorMessage.value =
-          'Could not identify the selected user. Close this window and try again.'
+        showToast(
+          'Could not identify the selected user. Close this window and try again.',
+          'error'
+        )
         return
       }
 
       await api.put(`/update/${userId}`, payload)
-      successMessage.value = 'User updated successfully.'
     } else {
       await api.post('/user-create', payload)
-      successMessage.value = 'User created successfully.'
     }
 
-    // Keep the modal open briefly so the user can see the success message.
-    await new Promise(resolve => setTimeout(resolve, 600))
+    // DashboardView handles the success toast and reloads the user list.
     emit('saved')
   } catch (error) {
     const status = error.response?.status
     const data = error.response?.data
+
     const message =
       data?.error || data?.message || 'Unable to save this user.'
 
     if (status === 409) {
+      // Keep duplicate email errors beside the email field.
       errors.email = message
     } else if (status === 400) {
-      errorMessage.value = message
+      showToast(message, 'error')
     } else if (status === 401) {
-      errorMessage.value =
-        'Your session has expired. Please log in again.'
+      showToast(
+        'Your session has expired. Please log in again.',
+        'error'
+      )
     } else if (status === 403) {
-      errorMessage.value = message
+      showToast(message, 'error')
     } else if (!error.response) {
-      errorMessage.value =
-        'Cannot connect to the server. Please try again.'
+      showToast(
+        'Cannot connect to the server. Please try again.',
+        'error'
+      )
     } else {
-      errorMessage.value = message
+      showToast(message, 'error')
     }
   } finally {
     saving.value = false
@@ -183,7 +183,6 @@ function closeModal() {
 
 function clearFieldError(field) {
   delete errors[field]
-  errorMessage.value = ''
 }
 </script>
 
@@ -209,14 +208,6 @@ function clearFieldError(field) {
           ×
         </button>
       </header>
-
-      <p v-if="errorMessage" class="message error" role="alert">
-        {{ errorMessage }}
-      </p>
-
-      <p v-if="successMessage" class="message success" role="status">
-        {{ successMessage }}
-      </p>
 
       <form @submit.prevent="submitForm" novalidate>
         <div class="form-group">
@@ -439,26 +430,6 @@ function clearFieldError(field) {
   line-height: 1.5;
 }
 
-.message {
-  padding: 11px 12px;
-  margin: 0 0 16px;
-  border: 1px solid;
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.message.error {
-  border-color: #fecdca;
-  background: #fef3f2;
-  color: #b42318;
-}
-
-.message.success {
-  border-color: #abefc6;
-  background: #ecfdf3;
-  color: #067647;
-}
 
 .modal-actions {
   display: flex;
@@ -513,4 +484,3 @@ button:disabled {
   }
 }
 </style>
-```
