@@ -1,28 +1,40 @@
+
 # EMSystem Backend
 
-The backend for **EMSystem (Employee Management System)** is built with Python and Django. It exposes JSON API endpoints consumed by the separate Vue 3 frontend.
-
-The application uses MySQL for data storage, PyJWT for token-based authentication, and Django's password-hashing utilities for password security.
+The **EMSystem (Employee Management System) Backend** is a Django-based JSON API. It handles user registration, authentication, profile operations, user administration, account renewal/reactivation, and password-reset functionality. The API is designed to be consumed by the separate Vue 3 frontend.
 
 ## Technology Stack
 
-- Python 3.11.5
-- Django 5.2.18
-- MySQL
-- PyJWT
-- Django password hashing
-- Django `JsonResponse` for JSON API responses
-- Django's test framework
+| Technology              | Purpose                                  |
+| ----------------------- | ---------------------------------------- |
+| Python 3.11.5           | Backend language                         |
+| Django 5.2.18           | Web framework                            |
+| MySQL                   | Relational database                      |
+| PyJWT                   | JWT-based authentication                 |
+| Django `JsonResponse` | JSON API responses                       |
+| Django password hashing | Secure password storage and verification |
+| Django test framework   | Automated backend tests                  |
+
+> This project currently uses Django function-based views and Django JSON responses. It does not assume Django REST Framework or SimpleJWT.
+
+## Project Location
+
+```text
+F:\Projects\Django_Project\emsystem\
+└── emsystem-backend\
+```
 
 ## Prerequisites
 
-- Python installed and available in the terminal
-- MySQL Server running
-- A configured MySQL database and database user
-- The project's Python virtual environment
+- Python 3.11.x
+- MySQL Server
+- Configured MySQL database and database user
+- Existing Python virtual environment (`env`)
 - Git (optional)
 
-## Project Setup
+## Setup and Installation
+
+Run the following commands in PowerShell.
 
 ### 1. Open the backend directory
 
@@ -32,15 +44,11 @@ cd F:\Projects\Django_Project\emsystem\emsystem-backend
 
 ### 2. Activate the virtual environment
 
-The existing project environment is named `env`.
-
 ```powershell
 .\env\Scripts\Activate.ps1
 ```
 
-If PowerShell cannot activate the environment, verify that the `env` directory exists and review your local PowerShell execution-policy settings.
-
-Confirm Python is available:
+Check the Python version:
 
 ```powershell
 python --version
@@ -48,31 +56,30 @@ python --version
 
 ### 3. Install dependencies
 
-If the repository contains a `requirements.txt` file, install the declared dependencies:
+If the project contains `requirements.txt`:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-If no dependency file exists, use the project's existing environment and dependency list. Do not replace working dependencies without checking compatibility.
-
 ### 4. Configure MySQL
 
-Create or identify the MySQL database and database user required by the project.
+Configure your database settings using the existing project configuration.
 
-Review the database configuration in Django's settings. Supply the correct database name, username, password, host, and port using the configuration method already adopted by the project.
+You will need:
 
-**Security:** Do not put real database credentials in this README or commit them to source control.
+- Database name
+- Database username
+- Database password
+- Database host
+- Database port
 
-### 5. Run Django checks
+**Important:** Never commit database credentials, JWT secrets, or passwords to GitHub.
+
+### 5. Run Django checks and migrations
 
 ```powershell
 python manage.py check
-```
-
-If database migrations are pending, review them and apply the appropriate migrations:
-
-```powershell
 python manage.py migrate
 ```
 
@@ -82,9 +89,13 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-The default local development address is `http://127.0.0.1:8000/`.
+Default development server:
 
-The API home endpoint is:
+```text
+http://127.0.0.1:8000/
+```
+
+API root:
 
 ```text
 http://127.0.0.1:8000/api/
@@ -92,39 +103,39 @@ http://127.0.0.1:8000/api/
 
 ## API Endpoints
 
-All endpoints use the `/api/` URL prefix. The following table summarizes the known endpoint behavior. Check the project's URL configuration and views for the exact HTTP methods and request formats.
+All API routes use the `/api/` prefix.
 
-| Endpoint                         | Purpose                       | Authentication               |
-| -------------------------------- | ----------------------------- | ---------------------------- |
-| `/api/`                        | API status/home               | Public                       |
-| `/api/register`                | Register a new user           | Public                       |
-| `/api/login`                   | Log in and receive a JWT      | Public                       |
-| `/api/user-list`               | Retrieve paginated users      | Required                     |
-| `/api/user-create`             | Create a user                 | Required                     |
-| `/api/update/<user_id>`        | Update user information       | Required                     |
-| `/api/delete/<user_id>`        | Delete a user                 | Required                     |
-| `/api/renew-account/<user_id>` | Renew an account              | Required; owner-only renewal |
-| `/api/reactivate-account`      | Reactivate an expired account | Credentials required         |
-| `/api/me`                      | Load a user's own profile     | Required                     |
-| `/api/password-reset`          | Reset a user's password      | Public                       |
+| Endpoint                         | Purpose                               | Access                         |
+| -------------------------------- | ------------------------------------- | ------------------------------ |
+| `GET /api/`                    | API status/home                       | Public                         |
+| `/api/register`                | Register a new user                   | Public                         |
+| `/api/login`                   | Authenticate and receive JWT          | Public                         |
+| `/api/user-list`               | Retrieve paginated users              | JWT required                   |
+| `/api/user-create`             | Create a user                         | JWT required                   |
+| `/api/update/<user_id>`        | Update user information               | JWT required                   |
+| `/api/delete/<user_id>`        | Delete a user                         | JWT required                   |
+| `/api/renew-account/<user_id>` | Renew an account                      | JWT required; own account only |
+| `/api/reactivate-account`      | Reactivate an expired account         | Credentials required           |
+| `/api/me`                      | Retrieve authenticated user's profile | JWT required                   |
+| `/api/password-reset`          | Reset a user's password               | Public route                   |
 
-Password-reset functionality is also implemented. Add its exact route, HTTP method, request body, and response details after verifying the relevant URL configuration and view.
+For routes where the HTTP method is not shown, check the current URL configuration and view before constructing a request.
 
-### User Registration
+The exact request fields and response formats for `/api/me` and `/api/password-reset` should be verified against their current implementations.
 
-Registration validates required fields, names, email, and password. Duplicate email addresses are rejected. Passwords are stored using Django's password-hashing utilities.
+## Authentication
 
-### Login and JWT Authentication
+After successful login, the API returns a JWT access token.
 
-Successful login returns a JWT access token and user information. Protected requests must supply the token in the authorization header:
+Send the token with protected requests using the Bearer authentication scheme:
 
 ```http
 Authorization: Bearer <access_token>
 ```
 
-The backend uses its configured JWT expiration settings. Do not hardcode real tokens or signing secrets in the source code or documentation.
+Keep access tokens private. Never commit real tokens to source control.
 
-### User List and Pagination
+## User List and Pagination
 
 The user-list endpoint supports pagination through query parameters:
 
@@ -132,79 +143,112 @@ The user-list endpoint supports pagination through query parameters:
 /api/user-list?page=1&page_size=10
 ```
 
-The default page is `1` and the default page size is `10`. The configured page-size range is 1–100.
+- Default page: `1`
+- Default page size: `10`
+- Page-size range: `1` to `100`
+- Password fields are excluded from user-list responses.
 
-The user-list response excludes password fields.
+The response includes pagination information such as the current page and total user count.
 
-### User Updates
+## User Registration and Login
 
-The update endpoint supports `PUT` and `PATCH`:
+Registration validates required user information:
 
-- `PUT` requires all supported editable fields.
-- `PATCH` allows partial updates.
-- Editable profile fields include `first_name`, `last_name`, and `email`.
+- First name
+- Last name
+- Email
+- Password
 
-Refer to the current view implementation for the exact response format and validation rules.
+Additional validation includes:
 
-### Account Renewal and Reactivation
+- Name length validation
+- Email validation
+- Password length validation
+- Duplicate email prevention
 
-Account renewal requires authentication and is restricted to the account owner.
+Passwords are stored using Django's password-hashing utilities.
 
-Account reactivation verifies the user's credentials before reactivating an expired account. Successful reactivation issues a fresh token according to the current implementation.
+Login verifies the supplied credentials. An expired account is handled separately from invalid credentials.
 
-### Current User Profile
+Successful login returns an access token and user information.
 
-**Endpoint:** `/api/me`
+Refer to the current backend views for exact JSON request and response structures.
 
-This endpoint is connected to the `my_profile` view. It is intended for retrieving the authenticated user's profile.
+## User Updates and Account Operations
 
-Authentication requirements and supported HTTP methods should be confirmed from the view implementation.
+### Update User
 
-### Password Reset
+The update endpoint supports:
 
-**Endpoint:** `/api/password-reset`
+- `PUT` – Requires all supported editable fields.
+- `PATCH` – Allows partial updates.
 
-This endpoint is connected to the `reset_password` view. It provides the password-reset functionality implemented in the backend.
+Editable fields include:
 
-Refer to the view's validation logic for the required request fields, password rules, response codes, and authentication requirements. Never include actual passwords, JWT tokens, or other secrets in documentation or logs.
+- `first_name`
+- `last_name`
+- `email`
+
+Password changes are not part of this profile-update operation.
+
+### Renew Account
+
+Account renewal requires a valid JWT and is restricted to the authenticated account owner.
+
+### Reactivate Account
+
+Account reactivation verifies the user's credentials before reactivating an expired account.
+
+The current implementation issues a fresh token after successful reactivation.
+
+### Profile and Password Reset
+
+The following endpoints are included:
+
+- `/api/me`
+- `/api/password-reset`
+
+Check their corresponding `my_profile` and `reset_password` views for exact HTTP methods, required JSON fields, validation rules, authentication behavior, and response codes.
 
 ## Password Security
 
-- Use Django's password-hashing utilities when storing passwords.
-- Verify passwords using Django's password-checking utilities.
-- Never store plaintext passwords.
-- Do not use reversible encryption as a replacement for password hashing.
-- Do not log passwords, access tokens, or sensitive authentication details.
+- Passwords are hashed using Django's password-hashing utilities.
+- Password verification uses Django's password-checking utilities.
+- Plaintext passwords are never stored.
+- Reversible encryption should not be used as a substitute for password hashing.
+- Passwords and JWT tokens should never be logged.
 
 ## Automated Testing
 
-Run the backend tests from this directory:
+Run the backend test suite:
 
 ```powershell
 python manage.py test userauth
 ```
 
-Run the Django system checks separately:
+Run Django system checks:
 
 ```powershell
 python manage.py check
 ```
 
-The test suite covers backend behavior, including authentication, validation, account operations, and password-reset functionality.
+The test suite covers backend behavior such as authentication, validation, account operations, and password-reset functionality.
 
-Tests may create a separate test database. Ensure the MySQL account has the necessary test-database permissions and follow Django's prompts carefully if a test database already exists.
+Django may create a separate test database. Ensure your MySQL user has the required permissions.
+
+**Important:** Always verify which database is affected before removing or recreating any database.
 
 ## Troubleshooting
 
-### `No module named 'django'`
+### No module named 'django'
 
-Activate the correct virtual environment:
+Activate the project's virtual environment:
 
 ```powershell
 .\env\Scripts\Activate.ps1
 ```
 
-Then check the installation:
+Check whether Django is installed:
 
 ```powershell
 python -m pip show django
@@ -212,28 +256,29 @@ python -m pip show django
 
 ### MySQL connection errors
 
-Verify that:
+Check:
 
 - MySQL Server is running.
-- The configured database exists.
-- The database credentials are correct.
-- The database user has the required permissions.
-- Django's database settings match the local configuration.
+- Database exists.
+- Database credentials are correct.
+- Django database settings match your local configuration.
 
 ### Authentication errors
 
-Check that:
+Check:
 
-- The authorization header uses the `Bearer` scheme.
-- The token is valid and has not expired.
-- The request targets the correct endpoint.
-- The request body uses the expected JSON fields.
+- Authorization header is included.
+- Bearer token is valid.
+- Token has not expired.
+- Correct API endpoint is being accessed.
 
 ### Test database errors
 
-Review the error carefully before deleting or recreating a test database. Confirm that it is the test database and not your development database.
+Read the Django error carefully and verify which database is affected before making changes.
+
+Do not delete the development database to resolve a test-database issue.
 
 ## Related Documentation
 
-- **[Universal README](../README.md)** — full project overview and setup sequence.
-- **[Frontend README](../emsystem-frontend/README.md)** — Vue installation, API integration, and frontend commands.
+- [Project Overview](../README.md)
+- [EMSystem Frontend](../emsystem-frontend/README.md)
