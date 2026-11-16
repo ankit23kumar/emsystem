@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch, defineAsyncComponent } from "vue";
+import { computed, onMounted,onBeforeUnmount, ref, watch, defineAsyncComponent } from "vue";
 import { useRouter } from "vue-router";
 import { clearSession, getUser } from "../services/auth";
 import { useUsers } from "../composables/useUsers";
@@ -418,10 +418,24 @@ async function handleFirstNameLetter(letter) {
   });
 }
 
-async function handleSearch() {
-  await updateFilters({
-    search: searchInput.value.trim(),
-  });
+// async function handleSearch() {
+//   await updateFilters({
+//     search: searchInput.value.trim(),
+//   });
+// }
+
+let searchTimeout = null;
+
+function handleSearch() {
+  // Cancel the previous pending search.
+  clearTimeout(searchTimeout);
+
+  // Wait until the user stops typing.
+  searchTimeout = setTimeout(() => {
+    updateFilters({
+      search: searchInput.value.trim(),
+    });
+  }, 500);
 }
 
 async function handleHeaderClick(event) {
@@ -466,6 +480,11 @@ async function nextPage() {
 onMounted(async () => {
   await Promise.all([loadProfile(), loadUsers()]);
 });
+
+onBeforeUnmount(() => {
+  clearTimeout(searchTimeout);
+});
+
 </script>
 
 <template>

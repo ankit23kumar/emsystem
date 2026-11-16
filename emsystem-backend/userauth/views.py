@@ -109,6 +109,8 @@ def user_list(request):
             | Q(email__icontains=search)
             | Q(full_name__icontains=search)
         )
+    
+    # print("the sql query is", queryset.query)
 
     # Filter users by first-name initial
     if letter:
