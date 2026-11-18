@@ -19,6 +19,9 @@ from django.db.models import Q, CharField, Value
 from django.db.models.functions import Concat
 from .models import User
 
+from roles.models import Role, RolePermission
+from roles.permissions import has_permission
+
 #Get Method : home , user_list
 def home(request):
     # return HttpResponse( "Hello Parth")
@@ -27,7 +30,6 @@ def home(request):
         'status' : 'success'
     
     })
-
 
 
 @jwt_required
@@ -66,6 +68,16 @@ def user_list(request):
     order = request.GET.get("order", "asc").strip().lower()
     letter = request.GET.get("letter", "").strip().upper()
 
+    user = request.authenticated_user
+
+    if not has_permission(user, "users.read"):
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "You do not have permission to view users."
+            },
+            status=403
+        )
     # Validate sorting field
     allowed_sort_fields = ["user_id", "first_name"]
 
@@ -526,7 +538,18 @@ def update_user(request, user_id):
             {"error": "Method not allowed"},
             status=405,
         )
+    
+    user = request.authenticated_user
 
+    if not has_permission(user, "users.update"):
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "You do not have permission to update users."
+            },
+            status=403
+        )
+    
     # Find the user to update
     try:
         user = User.objects.get(user_id=user_id)
@@ -649,6 +672,17 @@ def delete_user(request, user_id):
             {"error": "Method not allowed"},
             status = 405,
         )
+        
+    user = request.authenticated_user
+
+    if not has_permission(user, "users.delete"):
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "You do not have permission to delete users."
+            },
+            status=403
+        )
     
     try :
         user = User.objects.get(user_id = user_id)
@@ -677,6 +711,17 @@ def create_user(request):
             {"error":"Method not allowed"},
             status = 405,
         )
+        
+    user = request.authenticated_user
+
+    if not has_permission(user, "users.create"):
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "You do not have permission to create users."
+            },
+            status=403
+        )      
     
     #read and load json request body
     try : 
@@ -824,6 +869,129 @@ def my_profile(request):
     
 
 @csrf_exempt
+@jwt_required
+def update_my_profile(request):
+    if request.method not in ["PUT", "PATCH"]:
+        return JsonResponse(
+            {"error": "Method not allowed"},
+            status=405,
+        )
+
+    # The authenticated user is the only user who can be updated.
+    user = request.authenticated_user
+
+    # Read JSON request body.
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse(
+            {"error": "Invalid JSON"},
+            status=400,
+        )
+
+    if not isinstance(data, dict):
+        return JsonResponse(
+            {"error": "JSON object required"},
+            status=400,
+        )
+
+    allowed_fields = {"first_name", "last_name", "email"}
+
+    if not data:
+        return JsonResponse(
+            {"error": "Provide at least one field to update"},
+            status=400,
+        )
+
+    if set(data.keys()) - allowed_fields:
+        return JsonResponse(
+            {
+                "error": (
+                    "Only first_name, last_name, and email "
+                    "can be updated"
+                )
+            },
+            status=400,
+        )
+
+    # PUT requires all editable fields.
+    if request.method == "PUT" and not allowed_fields.issubset(data.keys()):
+        return JsonResponse(
+            {
+                "error": "PUT requires first_name, last_name, and email"
+            },
+            status=400,
+        )
+
+    updated_fields = []
+
+    for field, value in data.items():
+        if not isinstance(value, str):
+            return JsonResponse(
+                {"error": f"{field} must be a string"},
+                status=400,
+            )
+
+        value = value.strip()
+
+        if not value:
+            return JsonResponse(
+                {"error": f"{field} cannot be empty"},
+                status=400,
+            )
+
+        if field in ["first_name", "last_name"] and len(value) > 30:
+            return JsonResponse(
+                {"error": "Names must not exceed 30 characters"},
+                status=400,
+            )
+
+        if field == "email":
+            try:
+                validate_email(value)
+            except ValidationError:
+                return JsonResponse(
+                    {"error": "Enter a valid email address"},
+                    status=400,
+                )
+
+            if User.objects.filter(
+                email__iexact=value
+            ).exclude(user_id=user.user_id).exists():
+                return JsonResponse(
+                    {"error": "Email already registered"},
+                    status=409,
+                )
+
+        setattr(user, field, value)
+        updated_fields.append(field)
+
+    try:
+        user.save(update_fields=updated_fields)
+    except IntegrityError:
+        return JsonResponse(
+            {"error": "Unable to update profile with these details"},
+            status=409,
+        )
+
+    return JsonResponse(
+        {
+            "status": "success",
+            "message": "Profile updated successfully",
+            "user": {
+                "user_id": user.user_id,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "email": user.email,
+                "created_at": user.created_at.isoformat(),
+                "valid_until": user.valid_until.isoformat(),
+            },
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
 def reset_password(request):
     # This simplified endpoint is for local development only.
     if not getattr(settings, "PASSWORD_RESET_DEMO_ENABLED", False):
@@ -901,4 +1069,172 @@ def reset_password(request):
     return JsonResponse(
         {"message": "Password reset successful. Please log in."},
         status=200,
+    )
+
+
+
+@csrf_exempt
+@jwt_required
+def assign_user_role(request, user_id):
+    """
+    Assign, change, or remove a user's role.
+    """
+
+    # Allow only PATCH
+    if request.method != "PATCH":
+        return JsonResponse(
+            {"error": "Method not allowed."},
+            status=405
+        )
+
+    current_user = request.authenticated_user
+
+    # Check permission
+    if not has_permission(current_user, "users.update"):
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "You do not have permission to assign user roles."
+            },
+            status=403
+        )
+
+    
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse(
+            {"error": "Invalid JSON request body."},
+            status=400
+        )
+
+    if not isinstance(data, dict):
+        return JsonResponse(
+            {"error": "Request body must be a JSON object."},
+            status=400
+        )
+
+    # Validate request fields
+    if set(data.keys()) != {"role_id"}:
+        return JsonResponse(
+            {
+                "error": "Request body must contain only the role_id field."
+            },
+            status=400
+        )
+
+    role_id = data["role_id"]
+
+    
+    if role_id is not None:
+        if isinstance(role_id, bool) or not isinstance(role_id, int) or role_id <= 0:
+            return JsonResponse(
+                {
+                    "error": "role_id must be a positive integer or null."
+                },
+                status=400
+            )
+
+    # Find the target user
+    try:
+        target_user = User.objects.get(user_id=user_id)
+    except User.DoesNotExist:
+        return JsonResponse(
+            {"error": "User not found."},
+            status=404
+        )
+
+    # Find the requested role
+    role = None
+
+    if role_id is not None:
+        try:
+            role = Role.objects.get(role_id=role_id)
+        except Role.DoesNotExist:
+            return JsonResponse(
+                {"error": "Role not found."},
+                status=404
+            )
+
+        # 8. Prevent privilege escalation
+        current_user_permissions = set(
+            RolePermission.objects.filter(
+                role_id=current_user.role_id
+            ).values_list(
+                "permission__codename",
+                flat=True
+            )
+        )
+
+        requested_role_permissions = set(
+            RolePermission.objects.filter(
+                role=role
+            ).values_list(
+                "permission__codename",
+                flat=True
+            )
+        )
+
+        unauthorized_permissions = (
+            requested_role_permissions - current_user_permissions
+        )
+
+        if unauthorized_permissions:
+            return JsonResponse(
+                {
+                    "status": "error",
+                    "message": (
+                        "You cannot assign a role containing permissions "
+                        "you do not possess."
+                    ),
+                    "unauthorized_permissions": sorted(
+                        unauthorized_permissions
+                    )
+                },
+                status=403
+            )
+
+    # Assign or remove the role
+    try:
+        with transaction.atomic():
+            target_user = User.objects.select_for_update().get(
+                user_id=user_id
+            )
+
+            target_user.role = role
+            target_user.save(update_fields=["role"])
+
+    except IntegrityError:
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "Unable to update the user's role."
+            },
+            status=409
+        )
+
+    # Return updated user information
+    return JsonResponse(
+        {
+            "status": "success",
+            "message": (
+                "User role removed successfully."
+                if role is None
+                else "User role assigned successfully."
+            ),
+            "user": {
+                "user_id": target_user.user_id,
+                "first_name": target_user.first_name,
+                "last_name": target_user.last_name,
+                "email": target_user.email,
+                "role": (
+                    {
+                        "role_id": role.role_id,
+                        "role_name": role.role_name
+                    }
+                    if role else None
+                )
+            }
+        },
+        status=200
     )

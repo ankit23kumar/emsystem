@@ -12,5 +12,7 @@ urlpatterns = [
     # path("renew-account/<int:user_id>",views.renew_account,name="renew_account"),
     # path("reactivate-account",views.reactivate_account,name="reactivate_account"),
     path('me',views.my_profile,name='my_profile'),
-    path('password-reset',views.reset_password,name= 'reset_password')
+    path('me/update',views.update_my_profile,name='update_my_profile'),
+    path('password-reset',views.reset_password,name= 'reset_password'),
+    path('user/<int:user_id>/role',views.assign_user_role,name='assign_user_role')
 ]

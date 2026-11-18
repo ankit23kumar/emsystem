@@ -8,5 +8,14 @@ class User(models.Model):
     password = models.CharField(max_length= 128)
     created_at = models.DateTimeField(auto_now_add=True)
     valid_until = models.DateTimeField()
+    
+    role = models.ForeignKey(
+        "roles.Role",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="users"
+    )
+    
     def __str__(self):
         return self.email

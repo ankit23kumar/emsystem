@@ -11,7 +11,7 @@ from .models import User
 from .jwtutils import create_access_token
 from unittest.mock import patch
 from django.db import IntegrityError, transaction
-
+from roles.models import Role, Permission, RolePermission
 
 class EMSystemAPITests(TestCase):
     def setUp(self):
@@ -27,6 +27,27 @@ class EMSystemAPITests(TestCase):
         self.auth_headers = {
             "HTTP_AUTHORIZATION": f"Bearer {self.token}"
         }
+        
+        # Create an Admin role for existing API tests
+        self.test_role = Role.objects.create(
+            role_name="Test Admin",
+            description="Administrative role for API testing."
+        )
+
+        # Assign all predefined permissions to the test role
+        permissions = Permission.objects.all()
+
+        RolePermission.objects.bulk_create([
+            RolePermission(
+                role=self.test_role,
+                permission=permission
+            )
+            for permission in permissions
+        ])
+
+        # Assign the role to the test user
+        self.user.role = self.test_role
+        self.user.save(update_fields=["role"])
 
     def test_home_endpoint(self):
         response = self.client.get("/api/")
@@ -497,5 +518,174 @@ class EMSystemAPITests(TestCase):
     @override_settings(PASSWORD_RESET_DEMO_ENABLED=True)
     def test_password_reset_rejects_get_request(self):
         response = self.client.get("/api/password-reset")
+
+        self.assertEqual(response.status_code, 405)
+
+
+    # --------------------------------------------------
+    # SELF PROFILE UPDATE TESTS
+    # --------------------------------------------------
+
+    def test_update_my_profile_requires_token(self):
+        response = self.client.patch(
+            "/api/me/update",
+            data=json.dumps({
+                "first_name": "Updated"
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_update_my_profile_patch_success(self):
+        response = self.client.patch(
+            "/api/me/update",
+            data=json.dumps({
+                "first_name": "Updated",
+                "last_name": "Employee",
+            }),
+            content_type="application/json",
+            **self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["message"],
+            "Profile updated successfully"
+        )
+
+        self.user.refresh_from_db()
+
+        self.assertEqual(self.user.first_name, "Updated")
+        self.assertEqual(self.user.last_name, "Employee")
+        self.assertEqual(self.user.email, "test@example.com")
+
+    def test_update_my_profile_put_success(self):
+        response = self.client.put(
+            "/api/me/update",
+            data=json.dumps({
+                "first_name": "Updated",
+                "last_name": "Employee",
+                "email": "updated@example.com",
+            }),
+            content_type="application/json",
+            **self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        self.user.refresh_from_db()
+
+        self.assertEqual(self.user.first_name, "Updated")
+        self.assertEqual(self.user.last_name, "Employee")
+        self.assertEqual(self.user.email, "updated@example.com")
+
+    def test_update_my_profile_put_requires_all_fields(self):
+        response = self.client.put(
+            "/api/me/update",
+            data=json.dumps({
+                "first_name": "Updated",
+            }),
+            content_type="application/json",
+            **self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_update_my_profile_rejects_invalid_json(self):
+        response = self.client.patch(
+            "/api/me/update",
+            data="{invalid json}",
+            content_type="application/json",
+            **self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_update_my_profile_rejects_unauthorized_fields(self):
+        original_password = self.user.password
+
+        response = self.client.patch(
+            "/api/me/update",
+            data=json.dumps({
+                "password": "NewPassword123!",
+            }),
+            content_type="application/json",
+            **self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.password, original_password)
+
+    def test_update_my_profile_rejects_duplicate_email(self):
+        User.objects.create(
+            first_name="Other",
+            last_name="Employee",
+            email="other@example.com",
+            password=make_password("OtherPass123!"),
+            valid_until=timezone.now() + timedelta(days=100),
+        )
+
+        response = self.client.patch(
+            "/api/me/update",
+            data=json.dumps({
+                "email": "other@example.com",
+            }),
+            content_type="application/json",
+            **self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 409)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "test@example.com")
+
+    def test_update_my_profile_rejects_invalid_email(self):
+        response = self.client.patch(
+            "/api/me/update",
+            data=json.dumps({
+                "email": "invalid-email",
+            }),
+            content_type="application/json",
+            **self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_user_without_role_can_update_own_profile(self):
+        employee = User.objects.create(
+            first_name="New",
+            last_name="Employee",
+            email="employee@example.com",
+            password=make_password("EmployeePass123!"),
+            valid_until=timezone.now() + timedelta(days=100),
+        )
+
+        self.assertIsNone(employee.role_id)
+
+        employee_token = create_access_token(employee)
+
+        response = self.client.patch(
+            "/api/me/update",
+            data=json.dumps({
+                "first_name": "Updated Employee",
+            }),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {employee_token}",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        employee.refresh_from_db()
+        self.assertEqual(employee.first_name, "Updated Employee")
+        self.assertIsNone(employee.role_id)
+
+    def test_update_my_profile_rejects_get_request(self):
+        response = self.client.get(
+            "/api/me/update",
+            **self.auth_headers,
+        )
 
         self.assertEqual(response.status_code, 405)
