@@ -1,72 +1,96 @@
+import { createRouter, createWebHistory } from "vue-router";
 
-import { createRouter, createWebHistory } from 'vue-router'
-
-// import LoginView from '../views/LoginView.vue'
-// import RegisterView from '../views/RegisterView.vue'
-// import DashboardView from '../views/DashboardView.vue'
-// import UserListView from '../views/UserListView.vue'
-const LoginView = () => import('../views/LoginView.vue')
-const RegisterView = () => import('../views/RegisterView.vue')
-const DashboardView = () => import('../views/DashboardView.vue')
-const UserListView = () => import('../views/UserListView.vue')
-import { isAuthenticated } from '../services/auth'
-// import UserFormView from '../views/UserFormView.vue'
-
+const LoginView = () => import("../views/LoginView.vue");
+const RegisterView = () => import("../views/RegisterView.vue");
+const DashboardView = () => import("../views/DashboardView.vue");
+const UserListView = () => import("../views/UserListView.vue");
+const RoleManagementView = () => import("../views/RoleManagementView.vue");
+import { useAuthStore } from "../stores/authStore";
+import { isAuthenticated } from "../services/auth";
 
 const routes = [
   {
-    path: '/',
-    name: 'login',
+    path: "/",
+    name: "login",
     component: LoginView,
     meta: { guestOnly: true },
   },
   {
-    path: '/register',
-    name: 'register',
+    path: "/register",
+    name: "register",
     component: RegisterView,
     meta: { guestOnly: true },
   },
   {
-    path: '/dashboard',
-    name: 'dashboard',
+    path: "/dashboard",
+    name: "dashboard",
     component: DashboardView,
     meta: { requiresAuth: true },
   },
   {
-    path: '/users',
-    name: 'users',
+    path: "/users",
+    name: "users",
     component: UserListView,
     meta: { requiresAuth: true },
   },
-  // {
-  //   path: '/users/new',
-  //   name: 'user-create',
-  //   component: UserFormView,
-  //   meta: { requiresAuth: true },
-  // },
-  // {
-  //   path: '/users/:userId/edit',
-  //   name: 'user-edit',
-  //   component: UserFormView,
-  //   meta: { requiresAuth: true }, 
-  // },
-]
+  {
+    path: "/roles",
+    name: "roles",
+    component: RoleManagementView,
+    meta: {
+      requiresAuth: true,
+      requiredPermission: "roles.read",
+    },
+  },
+];
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
-})
+});
 
-router.beforeEach((to) => {
-  const authenticated = isAuthenticated()
+// Global navigation guard
+router.beforeEach(async (to) => {
+  const authStore = useAuthStore();
+  const authenticated = isAuthenticated();
 
-  if (to.meta.requiresAuth && !authenticated) {
-    return { name: 'login' }
+  // No valid saved session
+  if (!authenticated) {
+    authStore.logout();
+
+    if (to.meta.requiresAuth) {
+      return { name: "login" };
+    }
+
+    return true;
   }
 
-  if (to.meta.guestOnly && authenticated) {
-    return { name: 'dashboard' }
-  }
-})
+  // Restore profile and permissions after browser refresh
+  if (!authStore.profileLoaded.value) {
+    try {
+      await authStore.initializeAuth();
+    } catch (error) {
+      console.error("Authentication initialization failed:", error);
 
-export default router
+      authStore.logout();
+      return { name: "login" };
+    }
+  }
+
+  // Prevent authenticated users from visiting guest pages
+  if (to.meta.guestOnly) {
+    return { name: "dashboard" };
+  }
+
+  // Check route-level permission
+  if (
+    to.meta.requiredPermission &&
+    !authStore.hasPermission(to.meta.requiredPermission)
+  ) {
+    return { name: "dashboard" };
+  }
+
+  return true;
+});
+
+export default router;

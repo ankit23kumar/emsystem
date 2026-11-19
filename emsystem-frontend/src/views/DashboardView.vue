@@ -1,12 +1,20 @@
 <script setup>
-import { computed, onMounted,onBeforeUnmount, ref, watch, defineAsyncComponent } from "vue";
+import {
+  computed,
+  onMounted,
+  onBeforeUnmount,
+  ref,
+  watch,
+  defineAsyncComponent,
+} from "vue";
 import { useRouter } from "vue-router";
-import { clearSession, getUser } from "../services/auth";
 import { useUsers } from "../composables/useUsers";
 import UserFormModal from "../components/UserFormModal.vue";
-import { deleteUser, getMyProfile, updateUser } from "../services/userService";
+import { deleteUser, updateUser } from "../services/userService";
+import { useAuthStore } from "../stores/authStore";
 import ConfirmationModal from "../components/ConfirmationModal.vue";
 import { useToast } from "../composables/useToast";
+import { getRoles, assignUserRole } from "../services/roleService";
 
 const UserGrid = defineAsyncComponent(
   () => import("../components/UserGrid.vue"),
@@ -14,6 +22,11 @@ const UserGrid = defineAsyncComponent(
 
 const router = useRouter();
 const { showToast } = useToast();
+const authStore = useAuthStore();
+
+const { user, profileLoaded, profileLoading } = authStore;
+
+const loading = profileLoading;
 
 const {
   users,
@@ -36,51 +49,8 @@ watch(errorMessage, (message) => {
   }
 });
 
-function statusBadgeRenderer(params) {
-  const isValid = params.value === "Valid";
-
-  const pill = document.createElement("span");
-  pill.className = `status-pill ${isValid ? "status-valid" : "status-invalid"}`;
-
-  const dot = document.createElement("span");
-  dot.className = "status-dot";
-
-  pill.appendChild(dot);
-  pill.appendChild(document.createTextNode(params.value));
-
-  return pill;
-}
-
-function userActionsRenderer(params) {
-  const container = document.createElement("div");
-  container.className = "row-actions";
-
-  const editButton = document.createElement("button");
-  editButton.type = "button";
-  editButton.className = "edit-button";
-  editButton.textContent = "Edit";
-  editButton.addEventListener("click", () => {
-    params.context.onEdit(params.data);
-  });
-
-  const deleteButton = document.createElement("button");
-  deleteButton.type = "button";
-  deleteButton.className = "delete-button";
-  deleteButton.textContent = "Delete";
-  deleteButton.addEventListener("click", () => {
-    params.context.onDelete(params.data);
-  });
-
-  container.append(editButton, deleteButton);
-
-  return container;
-}
-
 const searchInput = ref("");
 
-const user = ref(getUser());
-// const users = ref([])
-const loading = ref(true);
 // const usersLoading = ref(false)
 const savingProfile = ref(false);
 
@@ -93,6 +63,27 @@ const deletingUser = ref(false);
 const showUserModal = ref(false);
 const userFormMode = ref("create");
 const selectedUser = ref(null);
+
+// Role assignment state
+const showAssignRoleModal = ref(false);
+const selectedUserForRole = ref(null);
+const availableRoles = ref([]);
+const selectedRoleId = ref("");
+const loadingRoles = ref(false);
+const assigningRole = ref(false);
+
+const canAssignRoles = computed(() =>
+    authStore.hasPermission("users.update") &&
+    authStore.hasPermission("roles.read"),
+);
+
+const canCreateUsers = computed(() => authStore.hasPermission("users.create"));
+
+const canReadUsers = computed(() => authStore.hasPermission("users.read"));
+
+const canUpdateUsers = computed(() => authStore.hasPermission("users.update"));
+
+const canDeleteUsers = computed(() => authStore.hasPermission("users.delete"));
 
 function openCreateUserModal() {
   selectedUser.value = null;
@@ -186,22 +177,21 @@ function formatDate(value) {
 }
 
 function logout() {
-  clearSession();
+  authStore.logout();
   router.replace("/");
 }
 
 async function loadProfile() {
-  try {
-    const response = await getMyProfile();
+  // Avoid another API request if login already loaded the profile.
+  if (profileLoaded.value) {
+    return;
+  }
 
-    // Preserve user_id from the login session because /me may not return it.
-    user.value = {
-      ...user.value,
-      ...response.data.user,
-    };
+  try {
+    await authStore.loadCurrentUser();
   } catch (error) {
     if (error.response?.status === 401) {
-      clearSession();
+      authStore.logout();
       router.replace("/");
       return;
     }
@@ -212,8 +202,6 @@ async function loadProfile() {
         "Unable to load your profile.",
       "error",
     );
-  } finally {
-    loading.value = false;
   }
 }
 
@@ -376,6 +364,76 @@ async function confirmDeleteUser() {
   }
 }
 
+async function openAssignRoleModal(item) {
+  if (!canAssignRoles.value) return;
+
+  selectedUserForRole.value = item;
+  selectedRoleId.value = "";
+  showAssignRoleModal.value = true;
+  loadingRoles.value = true;
+
+  try {
+    const response = await getRoles();
+    availableRoles.value = response.data.roles || [];
+  } catch (error) {
+    showToast(
+      error.response?.data?.error ||
+        error.response?.data?.message ||
+        "Unable to load available roles.",
+      "error",
+    );
+
+    showAssignRoleModal.value = false;
+  } finally {
+    loadingRoles.value = false;
+  }
+}
+
+function closeAssignRoleModal() {
+  if (assigningRole.value) return;
+
+  showAssignRoleModal.value = false;
+  selectedUserForRole.value = null;
+  selectedRoleId.value = "";
+}
+
+async function submitRoleAssignment() {
+  if (!selectedUserForRole.value || assigningRole.value) return;
+
+  assigningRole.value = true;
+
+  try {
+    if (!selectedRoleId.value) return;
+
+    const roleId =
+      selectedRoleId.value === "none" ? null : Number(selectedRoleId.value);
+
+    const response = await assignUserRole(
+      selectedUserForRole.value.user_id,
+      roleId,
+    );
+
+    showToast(
+      response.data.message || "User role updated successfully.",
+      "success",
+    );
+
+    showAssignRoleModal.value = false;
+    selectedUserForRole.value = null;
+    selectedRoleId.value = "";
+    await loadUsers(currentPage.value);
+  } catch (error) {
+    showToast(
+      error.response?.data?.error ||
+        error.response?.data?.message ||
+        "Unable to assign role.",
+      "error",
+    );
+  } finally {
+    assigningRole.value = false;
+  }
+}
+
 async function handleFirstNameSort(order) {
   if (order === "default") {
     await updateFilters({
@@ -438,22 +496,6 @@ function handleSearch() {
   }, 500);
 }
 
-async function handleHeaderClick(event) {
-  const columnId = event.column?.getColId();
-
-  // Only respond to a double-click on First name header.
-  if (columnId !== "first_name" || event.event?.detail !== 2) {
-    return;
-  }
-
-  const nextOrder = filters.value.order === "asc" ? "desc" : "asc";
-
-  await updateFilters({
-    sort_by: "first_name",
-    order: nextOrder,
-  });
-}
-
 // async function handleLetterFilter() {
 //   await updateFilters({
 //     letter: selectedLetter.value,
@@ -484,7 +526,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearTimeout(searchTimeout);
 });
-
 </script>
 
 <template>
@@ -593,7 +634,11 @@ onBeforeUnmount(() => {
         <div class="table-heading">
           <h2>User Management</h2>
 
-          <button class="primary-button" @click="openCreateUserModal">
+          <button
+            class="primary-button"
+            v-if="canCreateUsers"
+            @click="openCreateUserModal"
+          >
             + Add New User
           </button>
         </div>
@@ -618,6 +663,11 @@ onBeforeUnmount(() => {
             :on-sort-first-name="handleFirstNameSort"
             :on-toggle-first-name-sort="handleFirstNameSortToggle"
             :on-filter-first-name-letter="handleFirstNameLetter"
+            :can-read-users="canReadUsers"
+            :can-update-users="canUpdateUsers"
+            :can-delete-users="canDeleteUsers"
+            :can-assign-roles="canAssignRoles"
+            :on-assign-role="openAssignRoleModal"
           />
         </div>
 
@@ -777,6 +827,84 @@ onBeforeUnmount(() => {
       @close="showUserModal = false"
       @saved="handleUserSaved"
     />
+    <div
+      v-if="showAssignRoleModal"
+      class="modal-backdrop"
+      @click.self="closeAssignRoleModal"
+    >
+      <section
+        class="profile-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="assign-role-title"
+      >
+        <div class="modal-heading">
+          <div>
+            <h2 id="assign-role-title">Assign User Role</h2>
+            <p>
+              Select a role for
+              <strong>
+                {{ selectedUserForRole?.first_name }}
+                {{ selectedUserForRole?.last_name }}
+              </strong>
+            </p>
+          </div>
+
+          <button
+            class="close-button"
+            type="button"
+            aria-label="Close"
+            :disabled="assigningRole"
+            @click="closeAssignRoleModal"
+          >
+            ×
+          </button>
+        </div>
+
+        <div v-if="loadingRoles" class="table-state">
+          Loading available roles...
+        </div>
+
+        <form v-else @submit.prevent="submitRoleAssignment">
+          <div class="form-field">
+            <label for="assign-role">Select Role</label>
+
+            <select id="assign-role" v-model="selectedRoleId" required>
+              <option value="" disabled>Select a role</option>
+
+              <option value="none">No Role</option>
+
+              <option
+                v-for="role in availableRoles"
+                :key="role.role_id"
+                :value="String(role.role_id)"
+              >
+                {{ role.role_name }}
+              </option>
+            </select>
+          </div>
+
+          <div class="modal-actions">
+            <button
+              type="button"
+              class="cancel-button"
+              :disabled="assigningRole"
+              @click="closeAssignRoleModal"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              class="primary-button"
+              :disabled="assigningRole || !selectedRoleId"
+            >
+              {{ assigningRole ? "Saving..." : "Assign Role" }}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
   </main>
 </template>
 
@@ -1605,5 +1733,15 @@ tbody tr:hover {
   height: 6px;
   border-radius: 50%;
   background: currentColor;
+}
+.form-field select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  background: white;
+  color: #151d2e;
+  font: inherit;
+  font-size: 13px;
 }
 </style>

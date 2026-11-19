@@ -20,6 +20,15 @@ export function saveSession(data) {
   )
 }
 
+export function getSession() {
+    if (!isAuthenticated()) return null
+
+    return {
+        access_token: localStorage.getItem(TOKEN_KEY),
+        user: getUser(),
+    }
+}
+
 export function getToken() {
   if (!isAuthenticated()) return null
 

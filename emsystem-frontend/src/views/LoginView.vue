@@ -1,104 +1,110 @@
-
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { saveSession } from '../services/auth'
-import { loginUser } from '../services/authService.js'
-import { useToast } from '../composables/useToast'
-import PasswordInput from '../components/PasswordInput.vue'
-import PasswordResetModal from '../components/PasswordResetModal.vue'
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { saveSession } from "../services/auth";
+import { loginUser } from "../services/authService.js";
+import { useToast } from "../composables/useToast";
+import PasswordInput from "../components/PasswordInput.vue";
+import PasswordResetModal from "../components/PasswordResetModal.vue";
+import { useAuthStore } from "../stores/authStore";
 
-const router = useRouter()
-const { showToast } = useToast()
+const router = useRouter();
+const authStore = useAuthStore();
 
-const email = ref('')
-const password = ref('')
-const loading = ref(false)
-const loggedInUser = ref(null)
-const showPasswordResetModal = ref(false)
+const { showToast } = useToast();
+
+const email = ref("");
+const password = ref("");
+const loading = ref(false);
+const loggedInUser = ref(null);
+const showPasswordResetModal = ref(false);
 
 async function handleLogin() {
-  loggedInUser.value = null
+  loggedInUser.value = null;
 
-  const normalizedEmail = email.value.trim()
+  const normalizedEmail = email.value.trim();
 
   if (!normalizedEmail || !password.value) {
-    showToast('Please enter your email and password.', 'warning')
-    return
+    showToast("Please enter your email and password.", "warning");
+    return;
   }
 
-  loading.value = true
+  loading.value = true;
 
   try {
     const response = await loginUser({
       email: normalizedEmail,
       password: password.value,
-    })
+    });
 
-    const data = response.data
+    const data = response.data;
 
     if (!data.access_token || !data.user) {
-      showToast(
-        'The server returned an unexpected login response.',
-        'error'
-      )
-      return
+      showToast("The server returned an unexpected login response.", "error");
+      return;
     }
 
-    loggedInUser.value = data.user
+    // loggedInUser.value = data.user
 
-    // Store the authenticated session.
-    saveSession(data)
+    // // Store the authenticated session.
+    // saveSession(data)
 
-    password.value = ''
+    // password.value = ''
+    saveSession(data);
 
-    showToast(data.message || 'Login successful!', 'success')
+    // Update the reactive authentication store
+    authStore.setSession(data);
+
+    // Fetch the latest profile and permissions
+    try {
+      await authStore.loadCurrentUser();
+    } catch (error) {
+      authStore.logout();
+      throw error;
+    }
+
+    loggedInUser.value = authStore.user.value;
+
+    password.value = "";
+
+    showToast(data.message || "Login successful!", "success");
 
     // Navigate to the dashboard.
-    await router.push('/dashboard')
+    await router.push("/dashboard");
   } catch (error) {
-    const responseData = error.response?.data
+    const responseData = error.response?.data;
 
-    if (responseData?.code === 'account_expired') {
-      showToast(
-        responseData.error || 'Your account has expired.',
-        'warning'
-      )
+    if (responseData?.code === "account_expired") {
+      showToast(responseData.error || "Your account has expired.", "warning");
     } else if (responseData?.error || responseData?.message) {
-      showToast(
-        responseData.error || responseData.message,
-        'error'
-      )
+      showToast(responseData.error || responseData.message, "error");
     } else if (error.response) {
       showToast(
         `Request failed with status ${error.response.status}.`,
-        'error'
-      )
-    } else if (error.code === 'ECONNABORTED') {
-      showToast(
-        'The request timed out. Please try again.',
-        'error'
-      )
+        "error",
+      );
+    } else if (error.code === "ECONNABORTED") {
+      showToast("The request timed out. Please try again.", "error");
     } else {
       showToast(
-        'Unable to connect to the server. Check that Django is running.',
-        'error'
-      )
+        "Unable to connect to the server. Check that Django is running.",
+        "error",
+      );
     }
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 function handlePasswordResetSuccess() {
-  showPasswordResetModal.value = false
+  showPasswordResetModal.value = false;
 
   showToast(
-    'Password reset successful. Please sign in with your new password.',
-    'success'
-  )
+    "Password reset successful. Please sign in with your new password.",
+    "success",
+  );
 
-  password.value = ''
+  password.value = "";
 }
 </script>
 
@@ -154,13 +160,9 @@ function handlePasswordResetSuccess() {
             Forgot Password?
           </button>
         </div>
-        
-        <button
-          type="submit"
-          class="login-button"
-          :disabled="loading"
-        >
-          {{ loading ? 'Signing in...' : 'Sign in' }}
+
+        <button type="submit" class="login-button" :disabled="loading">
+          {{ loading ? "Signing in..." : "Sign in" }}
         </button>
       </form>
       <p class="footer-text">
@@ -177,9 +179,7 @@ function handlePasswordResetSuccess() {
         <p>{{ loggedInUser.email }}</p>
       </section>
 
-      <p class="footer-text">
-        EMSystem · Employee Management
-      </p>
+      <p class="footer-text">EMSystem · Employee Management</p>
     </section>
     <PasswordResetModal
       v-if="showPasswordResetModal"

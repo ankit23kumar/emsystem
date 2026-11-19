@@ -146,6 +146,8 @@ def user_list(request):
         "email",
         "created_at",
         "valid_until",
+        "role_id",
+        "role__role_name",
     )
 
     # Apply pagination after filtering and sorting
@@ -169,6 +171,19 @@ def user_list(request):
     for user in users:
         user["created_at"] = user["created_at"].isoformat()
         user["valid_until"] = user["valid_until"].isoformat()
+
+        user["role"] = (
+            {
+                "role_id": user["role_id"],
+                "role_name": user["role__role_name"],
+            }
+            if user["role_id"] is not None
+            else None
+        )
+
+        # Remove the temporary flattened fields
+        del user["role_id"]
+        del user["role__role_name"]
 
     return JsonResponse(
         {
@@ -841,32 +856,53 @@ def create_user(request):
         },status = 201,
     )
     
-    
 
-@jwt_required  
-@csrf_exempt 
+@jwt_required
+@csrf_exempt
 def my_profile(request):
     if request.method != "GET":
         return JsonResponse(
             {"error": "Method not allowed"},
-            status = 405,
+            status=405,
         )
-    
+
     user = request.authenticated_user
     account_valid = timezone.now() < user.valid_until
-    
+
+    # Get the user's current role and permissions.
+    role = user.role
+
+    if role:
+        permissions = list(
+            role.role_permissions
+            .select_related("permission")
+            .order_by("permission__codename")
+            .values_list("permission__codename", flat=True)
+        )
+
+        role_data = {
+            "role_id": role.role_id,
+            "role_name": role.role_name,
+        }
+    else:
+        role_data = None
+        permissions = []
+
     return JsonResponse({
-        "status":"success",
+        "status": "success",
         "account_valid": account_valid,
-        "user":{
-            "first_name":user.first_name,
-            "last_name":user.last_name,
-            "email":user.email,
-            "created_at":user.created_at.isoformat(),
-            "valid_until":user.valid_until.isoformat(),
+        "user": {
+            "user_id": user.user_id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "created_at": user.created_at.isoformat(),
+            "valid_until": user.valid_until.isoformat(),
+            "role": role_data,
+            "permissions": permissions,
         },
-    },status = 200)
-    
+    }, status=200)
+
 
 @csrf_exempt
 @jwt_required

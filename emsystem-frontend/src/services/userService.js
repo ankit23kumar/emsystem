@@ -1,8 +1,14 @@
 import api from './api'
 
 //fetch a page of users
-export function getUsers(params = {}){
-    return api.get('/user-list', { params })
+// export function getUsers(params = {}){
+//     return api.get('/user-list', { params })
+// }
+export function getUsers(params = {}, signal) {
+  return api.get('/user-list', {
+    params,
+    signal,
+  })
 }
 
 //Create a user

@@ -44,12 +44,38 @@ const props = defineProps({
     type: Function,
     required: true,
   },
+  canUpdateUsers: {
+    type: Boolean,
+    default: false,
+  },
+  canDeleteUsers: {
+    type: Boolean,
+    default: false,
+  },
+  canReadUsers: {
+    type: Boolean,
+    default: false,
+  },
+  onAssignRole: {
+    type: Function,
+    default: null,
+  },
+  canAssignRoles: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const gridTheme = themeQuartz;
 const gridApi = ref(null);
 
 const filters = computed(() => props.filters);
+
+const noRowsMessage = computed(() => {
+  return props.canReadUsers
+    ? "No users found."
+    : "You have no permission to access users data.";
+});
 
 function isAccountValid(item) {
   if (!item.valid_until) return false;
@@ -83,25 +109,45 @@ function userActionsRenderer(params) {
   const container = document.createElement("div");
   container.className = "row-actions";
 
-  const editButton = document.createElement("button");
-  editButton.type = "button";
-  editButton.className = "edit-button";
-  editButton.textContent = "Edit";
+  if (props.canUpdateUsers) {
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "edit-button";
+    editButton.textContent = "Edit";
 
-  editButton.addEventListener("click", () => {
-    props.onEdit(params.data);
-  });
+    editButton.addEventListener("click", () => {
+      props.onEdit(params.data);
+    });
 
-  const deleteButton = document.createElement("button");
-  deleteButton.type = "button";
-  deleteButton.className = "delete-button";
-  deleteButton.textContent = "Delete";
+    container.appendChild(editButton);
+  }
 
-  deleteButton.addEventListener("click", () => {
-    props.onDelete(params.data);
-  });
+  if (props.canDeleteUsers) {
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "delete-button";
+    deleteButton.textContent = "Delete";
 
-  container.append(editButton, deleteButton);
+    deleteButton.addEventListener("click", () => {
+      props.onDelete(params.data);
+    });
+
+    container.appendChild(deleteButton);
+  }
+
+  if (props.canAssignRoles) {
+    const assignButton = document.createElement("button");
+
+    assignButton.type = "button";
+    assignButton.className = "assign-role-button";
+    assignButton.textContent = "Assign Role";
+
+    assignButton.addEventListener("click", () => {
+      props.onAssignRole?.(params.data);
+    });
+
+    container.appendChild(assignButton);
+  }
 
   return container;
 }
@@ -130,6 +176,14 @@ const columnDefs = [
     flex: 1,
   },
   {
+    headerName:"Role",
+    field:"role",
+    valueGetter: (params) =>
+      params.data?.role?.role_name || "No Role",
+    minWidth: 160,
+    sortable:false
+  },
+  {
     headerName: "Password",
     valueGetter: () => "••••••••",
   },
@@ -146,7 +200,7 @@ const columnDefs = [
     cellRenderer: userActionsRenderer,
     sortable: false,
     filter: false,
-    minWidth: 160,
+    minWidth: 260,
   },
 ];
 
@@ -198,8 +252,20 @@ watch(
       :context="gridContext"
       :suppressCellFocus="true"
       :overlayLoadingTemplate="'<span class=\'ag-overlay-loading-center\'>Loading users...</span>'"
-      :overlayNoRowsTemplate="'<span class=\'ag-overlay-no-rows-center\'>No users found.</span>'"
+      :overlayNoRowsTemplate="`<span class=\'ag-overlay-no-rows-center\'>${noRowsMessage}</span>`"
       @grid-ready="onGridReady"
     />
   </div>
 </template>
+
+<style scoped>
+:deep(.row-actions .assign-role-button) {
+  border: 1px solid #16a34a;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+:deep(.row-actions .assign-role-button:hover) {
+  background: #dcfce7;
+}
+</style>
