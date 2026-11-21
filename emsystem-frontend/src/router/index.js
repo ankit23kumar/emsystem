@@ -4,7 +4,7 @@ const LoginView = () => import("../views/LoginView.vue");
 const RegisterView = () => import("../views/RegisterView.vue");
 const DashboardView = () => import("../views/DashboardView.vue");
 const UserListView = () => import("../views/UserListView.vue");
-const RoleManagementView = () => import("../views/RoleManagementView.vue");
+const RoleManagementPanel = () => import("../components/dashboard/RoleManagementPanel.vue");
 import { useAuthStore } from "../stores/authStore";
 import { isAuthenticated } from "../services/auth";
 
@@ -34,9 +34,9 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
-    path: "/roles",
-    name: "roles",
-    component: RoleManagementView,
+    path: "/role-panel-preview",
+    name: "role-panel-preview",
+    component: RoleManagementPanel,
     meta: {
       requiresAuth: true,
       requiredPermission: "roles.read",

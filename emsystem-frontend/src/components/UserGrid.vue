@@ -2,6 +2,7 @@
 import { AgGridVue } from "ag-grid-vue3";
 import FirstNameHeader from "./FirstNameHeader.vue";
 import { ref, watch, nextTick, computed } from "vue";
+import RoleBadgeCellRenderer from "./RoleBadgeCellRenderer.vue";
 
 import {
   ModuleRegistry,
@@ -152,6 +153,7 @@ function userActionsRenderer(params) {
   return container;
 }
 
+
 const defaultColDef = {
   resizable: true,
   sortable: false,
@@ -164,24 +166,33 @@ const columnDefs = [
     headerName: "First name",
     sortable: false,
     headerComponent: FirstNameHeader,
-    minWidth: 160,
+    width: 160,
+    minWidth: 140,
   },
   {
     field: "last_name",
     headerName: "Last name",
+    width: 150,
   },
   {
     field: "email",
     headerName: "Email",
     flex: 1,
   },
+  // {
+  //   headerName:"Role",
+  //   field:"role",
+  //   valueGetter: (params) =>
+  //     params.data?.role?.role_name || "No Role",
+  //   minWidth: 160,
+  //   sortable:false
+  // },
   {
-    headerName:"Role",
-    field:"role",
-    valueGetter: (params) =>
-      params.data?.role?.role_name || "No Role",
+    headerName: "Role",
+    field: "role",
+    cellRenderer: RoleBadgeCellRenderer,
     minWidth: 160,
-    sortable:false
+    sortable: false,
   },
   {
     headerName: "Password",

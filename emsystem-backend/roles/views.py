@@ -2,6 +2,7 @@
 from django.http import JsonResponse
 import json
 
+from django.db.models import Count
 from django.db import IntegrityError, transaction
 from userauth.jwtutils import jwt_required
 from .models import Role, Permission, RolePermission
@@ -57,7 +58,8 @@ def role_list(request):
         )
 
     roles = list(
-        Role.objects.all()
+        Role.objects
+        .annotate(total_users=Count("users",distinct=True))
         .order_by("role_id")
         .values(
             "role_id",
@@ -65,6 +67,7 @@ def role_list(request):
             "description",
             "created_at",
             "updated_at",
+            "total_users"
         )
     )
 
