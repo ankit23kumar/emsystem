@@ -94,6 +94,21 @@ You will need:
 - Database host
 - Database port
 
+Firstly, we need to create a database "emsystem_db" manually in your system, then paste it your settings.py (Already exists):
+
+```Python
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'emsystem_db',
+        'USER': 'emsystem_user',
+        'PASSWORD': '***',  #replace your password with "***" placeholder
+        'PORT': 3306, # Change it according to your database port number
+        'HOST': '127.0.0.1', 
+    }
+}
+```
+
 Keep database credentials and JWT signing secrets in environment variables or another secure configuration mechanism.
 
 **Never commit passwords, database credentials, or JWT secrets to GitHub.**
