@@ -1,6 +1,6 @@
 
 <script setup>
-defineProps({
+const props = defineProps({
   activeTab: {
     type: String,
     required: true,
@@ -14,12 +14,15 @@ defineProps({
 const emit = defineEmits(["update:activeTab"]);
 
 function selectTab(tab) {
+  if (tab === "roles" && !props.showRoles) return;
+
   emit("update:activeTab", tab);
 }
 </script>
 
 <template>
   <nav class="dashboard-tabs" aria-label="Dashboard sections">
+    <!-- Users tab -->
     <button
       type="button"
       class="tab-button"
@@ -30,15 +33,23 @@ function selectTab(tab) {
       Users
     </button>
 
+    <!-- Roles tab: always visible -->
     <button
-      v-if="showRoles"
       type="button"
       class="tab-button"
-      :class="{ active: activeTab === 'roles' }"
-      :aria-current="activeTab === 'roles' ? 'page' : undefined"
+      :class="{
+        active: activeTab === 'roles' && showRoles,
+        'tab-locked': !showRoles,
+      }"
+      :disabled="!showRoles"
+      :aria-disabled="!showRoles"
+      :title="showRoles ? 'Manage roles' : 'You do not have permission to access roles'"
       @click="selectTab('roles')"
     >
       Roles
+      <!-- <span v-if="!showRoles" class="lock-indicator">
+        🔒
+      </span> -->
     </button>
   </nav>
 </template>
@@ -74,6 +85,23 @@ function selectTab(tab) {
   background: #e4eaf4;
   color: #2563eb;
   border-color: #cbd5e1;
+}
+
+.tab-locked {
+  opacity: 0.55;
+  filter: blur(0.3px);
+  cursor: not-allowed;
+  background: #e5e7eb;
+  color: #667085;
+}
+
+.tab-locked:hover {
+  background: #e5e7eb;
+}
+
+.lock-indicator {
+  margin-left: 5px;
+  font-size: 11px;
 }
 
 @media (max-width: 600px) {

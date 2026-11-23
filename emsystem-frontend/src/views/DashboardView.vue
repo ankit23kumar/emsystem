@@ -25,6 +25,8 @@ const loading = authStore.profileLoading;
 const showProfileForm = ref(false);
 const savingProfile = ref(false);
 const profileErrors = ref({});
+// Tracks whether the user has opened the Roles tab.
+const hasVisitedRoles = ref(false);
 
 const savedTab = localStorage.getItem("emsystem_active_tab")
 
@@ -34,6 +36,9 @@ const activeTab = ref(
 
 watch(activeTab, (newTab) => {
   localStorage.setItem("emsystem_active_tab", newTab)
+  if (newTab === "roles"  && canReadRoles.value){
+    hasVisitedRoles.value = true;
+  }
 })
 
 const canReadRoles = computed(() =>
@@ -79,6 +84,16 @@ function formatDate(value) {
     year: "numeric",
   }).format(date);
 }
+
+watch(
+  canReadRoles,
+  (allowed) => {
+    if (!allowed && activeTab.value === "roles") {
+      activeTab.value = "users";
+    }
+  },
+  { immediate: true },
+);
 
 async function loadProfile() {
   if (profileLoaded.value) return;
@@ -339,7 +354,8 @@ onMounted(() => {
 
       <!-- Roles tab -->
       <div
-        v-if="activeTab === 'roles' && canReadRoles"
+        v-if="hasVisitedRoles"
+        v-show="activeTab === 'roles' && canReadRoles"
         class="dashboard-panel"
       >
         <RoleManagementPanel/>

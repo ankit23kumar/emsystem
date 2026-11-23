@@ -68,6 +68,10 @@ const canDeleteUsers = computed(() =>
   authStore.hasPermission("users.delete"),
 );
 
+const canReadRoles = computed(() =>
+  authStore.hasPermission("roles.read"),
+);
+
 const canAssignRoles = computed(
   () =>
     authStore.hasPermission("users.update") &&
@@ -536,7 +540,13 @@ onBeforeUnmount(() => {
     v-if="showUserModal"
     :mode="userFormMode"
     :selected-user="selectedUser"
-    :can-assign-role="canCreateUsers || canUpdateUserss"
+    :can-assign-role="
+      userFormMode === 'create'
+        // ? canCreateUsers && canUpdateUsers
+        // : canUpdateUsers && canReadRoles
+        ? canCreateUsers || canUpdateUsers
+        : canUpdateUsers || canReadRoles
+    "
     @close="closeUserModal"
     @saved="handleUserSaved"
   />

@@ -2,10 +2,12 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { useRouter } from "vue-router";
 
+import { useAuthStore } from "../../stores/authStore";
 import { useUsers } from "../../composables/useUsers";
 import RoleFormModal from "./RoleFormModal.vue";
 import ConfirmationModal from "../../components/ConfirmationModal.vue";
-import RoleBadge from "../RoleBadge.vue"
+import RoleBadge from "../RoleBadge.vue";
+import { useToast } from "../../composables/useToast";
 
 import {
   getRoles,
@@ -22,6 +24,8 @@ import {
 // --------------------------------------------------
 
 const router = useRouter();
+const authStore = useAuthStore();
+const { showToast } = useToast();
 
 const {
   users,
@@ -91,6 +95,29 @@ watch(roleTotalPages, (newTotalPages) => {
     roleCurrentPage.value = newTotalPages;
   }
 });
+
+// --------------------------------------------------
+// Permissions
+// --------------------------------------------------
+
+const canReadRoles = computed(() => authStore.hasPermission("roles.read"));
+
+const canCreateRoles = computed(() => authStore.hasPermission("roles.create"));
+
+const canUpdateRoles = computed(() => authStore.hasPermission("roles.update"));
+
+const canDeleteRoles = computed(() => authStore.hasPermission("roles.delete"));
+
+const canReadUsers = computed(() => authStore.hasPermission("users.read"));
+
+const canUpdateUsers = computed(() => authStore.hasPermission("users.update"));
+
+// Role assignment requires permission to manage users
+// and permission to read the available roles.
+const canAssignRoles = computed(
+  () => canReadRoles.value && canUpdateUsers.value,
+);
+
 // --------------------------------------------------
 // Role permissions
 // --------------------------------------------------
@@ -133,7 +160,6 @@ const assignedUsersCount = computed(() => {
 const unassignedUsersCount = computed(() => {
   return Math.max(0, totalUsers.value - assignedUsersCount.value);
 });
-
 
 // --------------------------------------------------
 // Helpers
@@ -217,8 +243,12 @@ async function handleRoleSubmit(roleData) {
   try {
     if (roleFormMode.value === "edit") {
       await updateRole(selectedRoleForEdit.value.role_id, roleData);
+
+      showToast("Role updated successfully.", "success");
     } else {
       await createRole(roleData);
+
+      showToast("Role created successfully.", "success");
     }
 
     showRoleFormModal.value = false;
@@ -226,15 +256,17 @@ async function handleRoleSubmit(roleData) {
 
     await loadRoles();
   } catch (error) {
-    roleFormError.value = getErrorMessage(
+    const message = getErrorMessage(
       error,
       "Failed to save role. Please try again.",
     );
+
+    roleFormError.value = message;
+    showToast(message, "error");
   } finally {
     savingRole.value = false;
   }
 }
-
 // --------------------------------------------------
 // Delete role confirmation
 // --------------------------------------------------
@@ -263,21 +295,23 @@ async function confirmDeleteRole() {
   roleActionError.value = "";
 
   try {
-    await deleteRole(roleToDelete.value.role_id);
+    const response = await deleteRole(roleToDelete.value.role_id);
+
+    showToast(response.data.message || "Role deleted successfully.", "success");
 
     showDeleteConfirmation.value = false;
     roleToDelete.value = null;
 
     await Promise.all([loadRoles(), loadUsers(currentPage.value)]);
   } catch (error) {
-    roleActionError.value = getErrorMessage(
-      error,
-      "Unable to delete this role.",
-    );
+    const message = getErrorMessage(error, "Unable to delete this role.");
+
+    roleActionError.value = message;
+    showToast(message, "error");
   } finally {
     deletingRole.value = false;
   }
-} 
+}
 
 // --------------------------------------------------
 // Role details modal
@@ -299,10 +333,12 @@ async function openRoleDetails(roleId) {
 
     selectedRoleDetails.value = response.data.role;
   } catch (error) {
-    roleDetailsError.value = getErrorMessage(
+    const message = getErrorMessage(
       error,
       "Failed to load role details.",
     );
+    roleDetailsError.value = message;
+    showToast(message, "error");
   } finally {
     loadingRoleDetails.value = false;
   }
@@ -410,8 +446,8 @@ async function handleUserPageSizeChange(event) {
 
 const selectedRoles = ref({});
 const assigningUserId = ref(null);
-const assignmentMessage = ref("");
-const assignmentError = ref("");
+// const assignmentMessage = ref("");
+// const assignmentError = ref("");
 
 function updateSelectedRole(userId, roleId) {
   selectedRoles.value[userId] = roleId;
@@ -421,25 +457,35 @@ async function handleAssignRole(user) {
   const roleId = selectedRoles.value[user.user_id];
 
   if (!roleId) {
-    assignmentError.value = "Please select a role first.";
-    assignmentMessage.value = "";
+    showToast("Please select a role first.", "error");
     return;
   }
 
   assigningUserId.value = user.user_id;
-  assignmentError.value = "";
-  assignmentMessage.value = "";
 
   try {
-    await assignUserRole(user.user_id, Number(roleId));
+    const response = await assignUserRole(
+      user.user_id,
+      Number(roleId),
+    );
 
-    assignmentMessage.value = `Role assigned successfully to ${user.first_name}.`;
+    showToast(
+      response.data.message ||
+        `Role assigned successfully to ${user.first_name}.`,
+      "success",
+    );
 
-    await loadUsers(currentPage.value);
+    await Promise.all([
+      loadUsers(currentPage.value),
+      loadRoles(),
+    ]);
 
     delete selectedRoles.value[user.user_id];
   } catch (error) {
-    assignmentError.value = getErrorMessage(error, "Failed to assign role.");
+    showToast(
+      getErrorMessage(error, "Failed to assign role."),
+      "error",
+    );
   } finally {
     assigningUserId.value = null;
   }
@@ -449,8 +495,25 @@ async function handleAssignRole(user) {
 // Initial loading
 // --------------------------------------------------
 
+// onMounted(async () => {
+//   await Promise.all([loadRoles(), loadPermissions(), loadUsers(1)]);
+// });
 onMounted(async () => {
-  await Promise.all([loadRoles(), loadPermissions(), loadUsers(1)]);
+  const requests = [];
+
+  if (canReadRoles.value) {
+    requests.push(loadRoles());
+  }
+
+  if (canCreateRoles.value || canUpdateRoles.value) {
+    requests.push(loadPermissions());
+  }
+
+  if (canReadUsers.value) {
+    requests.push(loadUsers(1));
+  }
+
+  await Promise.all(requests);
 });
 </script>
 
@@ -508,6 +571,7 @@ onMounted(async () => {
         </div>
 
         <button
+          v-if="canCreateRoles"
           class="primary-button"
           type="button"
           @click="openCreateRoleModal"
@@ -573,6 +637,7 @@ onMounted(async () => {
               <td>
                 <div class="role-actions">
                   <button
+                    v-if="canReadRoles"
                     type="button"
                     class="role-action-btn details-btn"
                     @click="openRoleDetails(role.role_id)"
@@ -581,6 +646,7 @@ onMounted(async () => {
                   </button>
 
                   <button
+                    v-if="canUpdateRoles"
                     type="button"
                     class="role-action-btn edit-btn"
                     @click="openEditRoleModal(role)"
@@ -589,6 +655,7 @@ onMounted(async () => {
                   </button>
 
                   <button
+                    v-if="canDeleteRoles"
                     type="button"
                     class="role-action-btn delete-btn"
                     @click="openDeleteConfirmation(role)"
@@ -655,7 +722,7 @@ onMounted(async () => {
     </div>
 
     <!-- Assign Roles to Users -->
-    <div class="role-list-card assignment-card">
+    <div v-if="canReadUsers" class="role-list-card assignment-card">
       <div class="section-header">
         <div>
           <h2>Assign Roles to Users</h2>
@@ -703,15 +770,18 @@ onMounted(async () => {
         >
           Clear
         </button>
+        <!-- <p v-else class="state-message">
+          You do not have permission to view users.
+        </p> -->
       </div>
 
-      <p v-if="assignmentMessage" class="success-message">
+      <!-- <p v-if="assignmentMessage" class="success-message">
         {{ assignmentMessage }}
       </p>
 
       <p v-if="assignmentError" class="error-message">
         {{ assignmentError }}
-      </p>
+      </p> -->
 
       <div v-if="loading" class="state-message">Loading users...</div>
 
@@ -745,8 +815,8 @@ onMounted(async () => {
               </th>
               <th>Email</th>
               <th>Current Role</th>
-              <th>Assign Role</th>
-              <th>Action</th>
+              <th v-if="canAssignRoles">Assign Role</th>
+              <th v-if="canAssignRoles">Action</th>
             </tr>
           </thead>
 
@@ -768,10 +838,10 @@ onMounted(async () => {
                   :role-name="user.role.role_name"
                   :role-id="user.role.role_id"
                 />
-                <RoleBadge v-else role-name="Unassigned"/> 
+                <RoleBadge v-else role-name="Unassigned" />
               </td>
 
-              <td>
+              <td v-if="canAssignRoles">
                 <select
                   class="role-select"
                   :value="selectedRoles[user.user_id] || ''"
@@ -791,7 +861,7 @@ onMounted(async () => {
                 </select>
               </td>
 
-              <td>
+              <td v-if="canAssignRoles">
                 <button
                   class="action-button"
                   type="button"
@@ -1624,7 +1694,6 @@ onMounted(async () => {
    Responsive layout
 ======================================== */
 
-
 @media (max-width: 700px) {
   .role-list-footer,
   .assignment-pagination {
@@ -1639,7 +1708,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 600px) {
-
   .role-list-card {
     padding: 15px;
   }
