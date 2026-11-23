@@ -1,210 +1,288 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
-import api from '../services/api'
-import PasswordInput from './PasswordInput.vue'
-import { useToast } from '../composables/useToast'
+import { computed, reactive, ref, watch } from "vue";
+import PasswordInput from "./PasswordInput.vue";
+import { useToast } from "../composables/useToast";
+import { getRoles, assignUserRole } from "../services/roleService";
+import { createUser, replaceUser } from "../services/userService";
 
-const { showToast } = useToast()
+const { showToast } = useToast();
 
 const props = defineProps({
   mode: {
     type: String,
-    default: 'create',
-    validator: value => ['create', 'edit'].includes(value),
+    default: "create",
+    validator: (value) => ["create", "edit"].includes(value),
   },
   selectedUser: {
     type: Object,
     default: null,
   },
-})
+  canAssignRole: {
+    type: Boolean,
+    default: false,
+  },
+});
 
-const emit = defineEmits(['close', 'saved'])
+const emit = defineEmits(["close", "saved"]);
 
-const isEditMode = computed(() => props.mode === 'edit')
-const saving = ref(false)
-const errors = reactive({})
+const isEditMode = computed(() => props.mode === "edit");
+const saving = ref(false);
+const errors = reactive({});
+
+const roles = ref([]);
+const selectedRoleId = ref("");
+const loadingRoles = ref(false);
+const roleLoadError = ref("");
 
 const form = reactive({
-  first_name: '',
-  last_name: '',
-  email: '',
-  password: '',
-  valid_until: '',
-})
+  first_name: "",
+  last_name: "",
+  email: "",
+  password: "",
+  valid_until: "",
+});
 
 function clearErrors() {
-  Object.keys(errors).forEach(key => delete errors[key])
+  Object.keys(errors).forEach((key) => delete errors[key]);
 }
 
 function resetForm() {
-  form.first_name = props.selectedUser?.first_name || ''
-  form.last_name = props.selectedUser?.last_name || ''
-  form.email = props.selectedUser?.email || ''
-  form.password = ''
-  form.valid_until = ''
-  clearErrors()
+  form.first_name = props.selectedUser?.first_name || "";
+  form.last_name = props.selectedUser?.last_name || "";
+  form.email = props.selectedUser?.email || "";
+  form.password = "";
+  form.valid_until = "";
+  selectedRoleId.value = props.selectedUser?.role?.role_id
+    ? String(props.selectedUser.role.role_id)
+    : "";
+  clearErrors();
+}
+
+watch(() => [props.mode, props.selectedUser], resetForm, { immediate: true });
+
+async function loadRoles() {
+  if (!props.canAssignRole) {
+    roles.value = [];
+    return;
+  }
+
+  loadingRoles.value = true;
+  roleLoadError.value = "";
+
+  try {
+    const response = await getRoles();
+    roles.value = response.data.roles || [];
+
+    // Restore the selected user's existing role in Edit mode.
+    if (isEditMode.value) {
+      selectedRoleId.value = props.selectedUser?.role?.role_id
+        ? String(props.selectedUser.role.role_id)
+        : "";
+    }
+  } catch (error) {
+    console.error("Failed to load roles:", error);
+
+    roleLoadError.value =
+      error.response?.data?.message || "Unable to load available roles.";
+  } finally {
+    loadingRoles.value = false;
+  }
 }
 
 watch(
-  () => [props.mode, props.selectedUser],
-  resetForm,
-  { immediate: true }
-)
+  () => [props.mode, props.canAssignRole, props.selectedUser?.user_id],
+  () => {
+    resetForm();
+    loadRoles();
+  },
+  { immediate: true },
+);
 
 function validate() {
-  clearErrors()
+  clearErrors();
 
-  const first = form.first_name.trim()
-  const last = form.last_name.trim()
-  const email = form.email.trim()
+  const first = form.first_name.trim();
+  const last = form.last_name.trim();
+  const email = form.email.trim();
 
   if (!first) {
-    errors.first_name = 'First name is required.'
+    errors.first_name = "First name is required.";
   } else if (first.length > 40) {
-    errors.first_name = 'Maximum 40 characters allowed.'
+    errors.first_name = "Maximum 40 characters allowed.";
   }
 
   if (!last) {
-    errors.last_name = 'Last name is required.'
+    errors.last_name = "Last name is required.";
   } else if (last.length > 40) {
-    errors.last_name = 'Maximum 40 characters allowed.'
+    errors.last_name = "Maximum 40 characters allowed.";
   }
 
   if (!email) {
-    errors.email = 'Email address is required.'
-  } else if (
-    email.length > 254 ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-  ) {
-    errors.email = 'Enter a valid email address.'
+    errors.email = "Email address is required.";
+  } else if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.email = "Enter a valid email address.";
   }
 
   if (!isEditMode.value) {
     if (!form.password) {
-      errors.password = 'Password is required.'
-    } else if (
-      form.password.length < 8 ||
-      form.password.length > 128
-    ) {
-      errors.password = 'Password must be between 8 and 128 characters.'
+      errors.password = "Password is required.";
+    } else if (form.password.length < 8 || form.password.length > 128) {
+      errors.password = "Password must be between 8 and 128 characters.";
     }
   }
 
   if (!isEditMode.value) {
     if (!form.valid_until) {
-      errors.valid_until = 'Validity date is required.'
+      errors.valid_until = "Validity date is required.";
     } else {
-      const today = new Date()
+      const today = new Date();
       const todayString = [
         today.getFullYear(),
-        String(today.getMonth() + 1).padStart(2, '0'),
-        String(today.getDate()).padStart(2, '0'),
-      ].join('-')
+        String(today.getMonth() + 1).padStart(2, "0"),
+        String(today.getDate()).padStart(2, "0"),
+      ].join("-");
 
       if (form.valid_until < todayString) {
-        errors.valid_until = 'Validity date cannot be in the past.'
+        errors.valid_until = "Validity date cannot be in the past.";
       }
     }
   }
 
-  return Object.keys(errors).length === 0
+  return Object.keys(errors).length === 0;
 }
 
 async function submitForm() {
-  if (!validate()) return
+  if (!validate()) return;
 
-  saving.value = true
+  saving.value = true;
+
+  // Tracks whether the profile was saved before a role update failed.
+  let profileUpdated = false;
 
   const payload = {
     first_name: form.first_name.trim(),
     last_name: form.last_name.trim(),
     email: form.email.trim().toLowerCase(),
-  }
+  };
 
   if (!isEditMode.value) {
-    payload.password = form.password
-    payload.valid_until = form.valid_until
+    payload.password = form.password;
+    payload.valid_until = form.valid_until;
+
+    if (props.canAssignRole) {
+      payload.role_id = selectedRoleId.value
+        ? Number(selectedRoleId.value)
+        : null;
+    }
   }
 
   try {
     if (isEditMode.value) {
-      const userId = props.selectedUser?.user_id
+      const userId = props.selectedUser?.user_id;
 
       if (!userId) {
         showToast(
-          'Could not identify the selected user. Close this window and try again.',
-          'error'
-        )
-        return
+          "Could not identify the selected user. Close this window and try again.",
+          "error",
+        );
+        return;
       }
 
-      await api.put(`/update/${userId}`, payload)
+      // Step 1: Update user profile using PUT.
+      await replaceUser(userId, payload);
+      profileUpdated = true;
+
+      // Step 2: Update role only if it has changed.
+      if (props.canAssignRole) {
+        const currentRoleId = props.selectedUser?.role?.role_id ?? null;
+
+        const newRoleId = selectedRoleId.value
+          ? Number(selectedRoleId.value)
+          : null;
+
+        if (currentRoleId !== newRoleId) {
+          await assignUserRole(userId, newRoleId);
+        }
+      }
     } else {
-      await api.post('/user-create', payload)
+      // Create user.
+      await createUser(payload);
     }
 
-    // DashboardView handles the success toast and reloads the user list.
-    emit('saved')
+    // Dashboard handles the success toast and reloads users.
+    emit("saved");
   } catch (error) {
-    const status = error.response?.status
-    const data = error.response?.data
+    const status = error.response?.status;
+    const data = error.response?.data;
 
-    const message =
-      data?.error || data?.message || 'Unable to save this user.'
+    const message = data?.error || data?.message || "Unable to save this user.";
+
+    // Profile saved, but the separate role update failed.
+    if (profileUpdated) {
+      showToast(
+        `Profile updated, but role assignment failed: ${message}`,
+        "error",
+      );
+      return;
+    }
 
     if (status === 409) {
-      // Keep duplicate email errors beside the email field.
-      errors.email = message
+      errors.email = message;
     } else if (status === 400) {
-      showToast(message, 'error')
+      showToast(message, "error");
     } else if (status === 401) {
-      showToast(
-        'Your session has expired. Please log in again.',
-        'error'
-      )
+      showToast("Your session has expired. Please log in again.", "error");
     } else if (status === 403) {
-      showToast(message, 'error')
+      showToast(message, "error");
     } else if (!error.response) {
-      showToast(
-        'Cannot connect to the server. Please try again.',
-        'error'
-      )
+      showToast("Cannot connect to the server. Please try again.", "error");
     } else {
-      showToast(message, 'error')
+      showToast(message, "error");
     }
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 
 function closeModal() {
-  if (!saving.value) emit('close')
+  if (!saving.value) emit("close");
 }
 
 function clearFieldError(field) {
-  delete errors[field]
+  delete errors[field];
 }
 </script>
 
 <template>
   <div class="modal-backdrop" @click.self="closeModal">
-    <section class="user-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <section
+      class="user-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
       <header class="modal-header">
         <div>
           <h2 id="modal-title">
-            {{ isEditMode ? 'Edit User' : 'Create User' }}
+            {{ isEditMode ? "Edit User" : "Create User" }}
           </h2>
 
           <p>
             {{
               isEditMode
-                ? 'Update this user’s information.'
-                : 'Enter the details for the new user.'
+                ? "Update this user’s information."
+                : "Enter the details for the new user."
             }}
           </p>
         </div>
 
-        <button class="close-button" type="button" aria-label="Close dialog" :disabled="saving" @click="closeModal">
+        <button
+          class="close-button"
+          type="button"
+          aria-label="Close dialog"
+          :disabled="saving"
+          @click="closeModal"
+        >
           ×
         </button>
       </header>
@@ -213,9 +291,18 @@ function clearFieldError(field) {
         <div class="form-group">
           <label for="modal-first-name">First name</label>
 
-          <input id="modal-first-name" v-model="form.first_name" :class="{ 'input-error': errors.first_name }"
-            type="text" maxlength="40" autocomplete="given-name" placeholder="Enter first name" :disabled="saving"
-            :aria-invalid="Boolean(errors.first_name)" @input="clearFieldError('first_name')" />
+          <input
+            id="modal-first-name"
+            v-model="form.first_name"
+            :class="{ 'input-error': errors.first_name }"
+            type="text"
+            maxlength="40"
+            autocomplete="given-name"
+            placeholder="Enter first name"
+            :disabled="saving"
+            :aria-invalid="Boolean(errors.first_name)"
+            @input="clearFieldError('first_name')"
+          />
 
           <small v-if="errors.first_name" class="field-error">
             {{ errors.first_name }}
@@ -225,9 +312,18 @@ function clearFieldError(field) {
         <div class="form-group">
           <label for="modal-last-name">Last name</label>
 
-          <input id="modal-last-name" v-model="form.last_name" :class="{ 'input-error': errors.last_name }" type="text"
-            maxlength="40" autocomplete="family-name" placeholder="Enter last name" :disabled="saving"
-            :aria-invalid="Boolean(errors.last_name)" @input="clearFieldError('last_name')" />
+          <input
+            id="modal-last-name"
+            v-model="form.last_name"
+            :class="{ 'input-error': errors.last_name }"
+            type="text"
+            maxlength="40"
+            autocomplete="family-name"
+            placeholder="Enter last name"
+            :disabled="saving"
+            :aria-invalid="Boolean(errors.last_name)"
+            @input="clearFieldError('last_name')"
+          />
 
           <small v-if="errors.last_name" class="field-error">
             {{ errors.last_name }}
@@ -237,9 +333,18 @@ function clearFieldError(field) {
         <div class="form-group">
           <label for="modal-email">Email address</label>
 
-          <input id="modal-email" v-model="form.email" :class="{ 'input-error': errors.email }" type="email"
-            maxlength="254" autocomplete="email" placeholder="name@example.com" :disabled="saving"
-            :aria-invalid="Boolean(errors.email)" @input="clearFieldError('email')" />
+          <input
+            id="modal-email"
+            v-model="form.email"
+            :class="{ 'input-error': errors.email }"
+            type="email"
+            maxlength="254"
+            autocomplete="email"
+            placeholder="name@example.com"
+            :disabled="saving"
+            :aria-invalid="Boolean(errors.email)"
+            @input="clearFieldError('email')"
+          />
 
           <small v-if="errors.email" class="field-error">
             {{ errors.email }}
@@ -250,8 +355,15 @@ function clearFieldError(field) {
         <div v-if="!isEditMode" class="form-group">
           <label for="modal-password">Password</label>
 
-          <PasswordInput id="modal-password" v-model="form.password" name="password"
-            placeholder="Enter 8–128 characters" autocomplete="new-password" :required="true" :disabled="saving" />
+          <PasswordInput
+            id="modal-password"
+            v-model="form.password"
+            name="password"
+            placeholder="Enter 8–128 characters"
+            autocomplete="new-password"
+            :required="true"
+            :disabled="saving"
+          />
 
           <small class="helper-text">
             Password must be 8–128 characters.
@@ -266,15 +378,59 @@ function clearFieldError(field) {
           Passwords are securely hashed and cannot be viewed or retrieved.
         </p>
 
+        <!-- <div v-if="!isEditMode && canAssignRole" class="form-group"> -->
+        <div v-if="canAssignRole" class="form-group">
+          <label for="user-role">
+            {{ isEditMode ? "Assigned Role" : "Assign Role" }}
+          </label>
+
+          <select
+            id="user-role"
+            v-model="selectedRoleId"
+            :disabled="loadingRoles || !!roleLoadError || saving"
+          >
+            <option value="">No Role</option>
+
+            <option
+              v-for="role in roles"
+              :key="role.role_id"
+              :value="String(role.role_id)"
+            >
+              {{ role.role_name }}
+            </option>
+          </select>
+
+          <small v-if="loadingRoles"> Loading roles... </small>
+
+          <small v-else-if="roleLoadError" class="error-message">
+            {{ roleLoadError }}
+          </small>
+
+          <small v-else-if="isEditMode">
+            Change or remove the currently assigned role.
+          </small>
+        </div>
         <!-- Validity date is required only when creating a user. -->
         <div v-if="!isEditMode" class="form-group">
           <label for="modal-valid-until">Validity date</label>
 
-          <input id="modal-valid-until" v-model="form.valid_until" :class="{ 'input-error': errors.valid_until }"
-            type="date" :min="new Date().getFullYear() + '-' +
-              String(new Date().getMonth() + 1).padStart(2, '0') + '-' +
-              String(new Date().getDate()).padStart(2, '0')" required :disabled="saving"
-            :aria-invalid="Boolean(errors.valid_until)" @change="clearFieldError('valid_until')" />
+          <input
+            id="modal-valid-until"
+            v-model="form.valid_until"
+            :class="{ 'input-error': errors.valid_until }"
+            type="date"
+            :min="
+              new Date().getFullYear() +
+              '-' +
+              String(new Date().getMonth() + 1).padStart(2, '0') +
+              '-' +
+              String(new Date().getDate()).padStart(2, '0')
+            "
+            required
+            :disabled="saving"
+            :aria-invalid="Boolean(errors.valid_until)"
+            @change="clearFieldError('valid_until')"
+          />
 
           <small class="helper-text">
             Choose the date until which this account will remain valid.
@@ -286,17 +442,18 @@ function clearFieldError(field) {
         </div>
 
         <footer class="modal-actions">
-          <button type="button" class="cancel-button" :disabled="saving" @click="closeModal">
+          <button
+            type="button"
+            class="cancel-button"
+            :disabled="saving"
+            @click="closeModal"
+          >
             Cancel
           </button>
 
           <button type="submit" class="save-button" :disabled="saving">
             {{
-              saving
-                ? 'Saving...'
-                : isEditMode
-                  ? 'Save Changes'
-                  : 'Create User'
+              saving ? "Saving..." : isEditMode ? "Save Changes" : "Create User"
             }}
           </button>
         </footer>
@@ -377,7 +534,7 @@ function clearFieldError(field) {
   font-weight: 650;
 }
 
-.form-group>input {
+.form-group > input {
   display: block;
   width: 100%;
   min-width: 0;
@@ -391,16 +548,16 @@ function clearFieldError(field) {
   font-size: 14px;
 }
 
-.form-group>input:focus {
+.form-group > input:focus {
   border-color: #2864ed;
   box-shadow: 0 0 0 3px rgba(40, 100, 237, 0.12);
 }
 
-.form-group>input.input-error {
+.form-group > input.input-error {
   border-color: #d92d20;
 }
 
-.form-group>input:disabled {
+.form-group > input:disabled {
   background: #f9fafb;
 }
 
@@ -429,7 +586,6 @@ function clearFieldError(field) {
   font-size: 12px;
   line-height: 1.5;
 }
-
 
 .modal-actions {
   display: flex;
@@ -482,5 +638,63 @@ button:disabled {
   .modal-actions button {
     width: 100%;
   }
+}
+
+/* Role Dropdown */
+.form-group select {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #374151;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+  appearance: none;
+
+  /* Custom dropdown arrow */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 16px;
+  padding-right: 40px;
+}
+
+.form-group select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.form-group select:disabled {
+  background-color: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.form-group select option {
+  padding: 10px;
+  background-color: #ffffff;
+  color: #374151;
+}
+
+.form-group select option:first-child {
+  color: #6b7280;
+}
+
+/* Role loading and error messages */
+.form-group small {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.form-group small.error-message {
+  color: #dc2626;
 }
 </style>

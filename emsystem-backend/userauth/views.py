@@ -758,6 +758,7 @@ def create_user(request):
     email = data.get("email")
     password = data.get("password")
     valid_until = data.get("valid_until")
+    role_id = data.get("role_id")
     
     if not all(  
         isinstance(value ,str )
@@ -825,7 +826,24 @@ def create_user(request):
 
     valid_until_datetime = timezone.make_aware(
         datetime.combine(selected_date, time.max)
-    )       
+    )
+    
+    selected_role = None
+
+    if role_id is not None:
+        if isinstance(role_id, bool) or not isinstance(role_id, int) or role_id <= 0:
+            return JsonResponse(
+                {"error": "Invalid role ID"},
+                status=400,
+            )
+
+        try:
+            selected_role = Role.objects.get(role_id=role_id)
+        except Role.DoesNotExist:
+            return JsonResponse(
+                {"error": "Selected role does not exist"},
+                status=404,
+            )       
 
     try:
         user = User.objects.create(
@@ -834,6 +852,7 @@ def create_user(request):
             email = email,
             password = make_password(password),
             valid_until=valid_until_datetime,
+            role = selected_role,
         )
     except IntegrityError:
         return JsonResponse(
@@ -852,6 +871,7 @@ def create_user(request):
                 "email":user.email,
                 "created_at":user.created_at.isoformat(),
                 "valid_until": user.valid_until.isoformat(),
+                "role_id":user.role_id
             },
         },status = 201,
     )

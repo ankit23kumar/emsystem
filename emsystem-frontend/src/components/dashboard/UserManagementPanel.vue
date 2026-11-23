@@ -536,6 +536,7 @@ onBeforeUnmount(() => {
     v-if="showUserModal"
     :mode="userFormMode"
     :selected-user="selectedUser"
+    :can-assign-role="canCreateUsers || canUpdateUserss"
     @close="closeUserModal"
     @saved="handleUserSaved"
   />

@@ -48,7 +48,10 @@ def role_list(request):
 
     user = request.authenticated_user
 
-    if not has_permission(user, "roles.read"):
+    if not (has_permission(user, "roles.read")
+        or has_permission(user, "users.create")
+        or has_permission(user, "users.update")
+    ):
         return JsonResponse(
             {
                 "status": "error",
