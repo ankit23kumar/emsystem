@@ -144,7 +144,7 @@ async function handleRegister() {
         </div>
 
         <div class="form-group">
-          <label for="email">Email address</label>
+          <label for="email">Email address <span class="required">*</span></label>
           <input
             id="email"
             v-model="email"
@@ -163,7 +163,7 @@ async function handleRegister() {
         </div>
 
         <div class="form-group">
-          <label for="password">Password</label>
+          <label for="password">Password <span class="required">*</span></label>
           <PasswordInput
             id="password"
             v-model="password"
@@ -176,7 +176,7 @@ async function handleRegister() {
         </div>
 
         <div class="form-group">
-          <label for="confirmPassword">Confirm password</label>
+          <label for="confirmPassword">Confirm password <span class="required">*</span></label>
           <PasswordInput
             id="confirmPassword"
             v-model="confirmPassword"
@@ -368,6 +368,10 @@ button:disabled {
   margin-top: 6px;
   color: #b42318;
   font-size: 12px;
+}
+
+.required {
+  color: #dc2626;
 }
 
 </style>

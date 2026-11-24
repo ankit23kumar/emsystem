@@ -129,7 +129,7 @@ async function handlePasswordReset() {
 
       <form @submit.prevent="handlePasswordReset" novalidate>
         <div class="form-group">
-          <label for="reset-email">Email address</label>
+          <label for="reset-email">Email address <span class="required">*</span></label>
           <input
             id="reset-email"
             v-model="form.email"
@@ -167,7 +167,7 @@ async function handlePasswordReset() {
         </div>
 
         <div class="form-group">
-          <label for="reset-confirm-password"> Confirm new password </label>
+          <label for="reset-confirm-password"> Confirm new password <span class="required">*</span></label>
 
           <PasswordInput
             id="reset-confirm-password"
@@ -380,5 +380,9 @@ async function handlePasswordReset() {
   color: #b42318;
   font-size: 13px;
   line-height: 1.4;
+}
+
+.required {
+  color: #dc2626;
 }
 </style>

@@ -331,7 +331,10 @@ function clearFieldError(field) {
         </div>
 
         <div class="form-group">
-          <label for="modal-email">Email address</label>
+          <label for="modal-email">
+            Email address
+            <span class="required">*</span>
+          </label>
 
           <input
             id="modal-email"
@@ -353,7 +356,10 @@ function clearFieldError(field) {
 
         <!-- Password is required only when creating a user. -->
         <div v-if="!isEditMode" class="form-group">
-          <label for="modal-password">Password</label>
+          <label for="modal-password">
+            Password
+            <span class="required">*</span>
+          </label>
 
           <PasswordInput
             id="modal-password"
@@ -412,7 +418,10 @@ function clearFieldError(field) {
         </div>
         <!-- Validity date is required only when creating a user. -->
         <div v-if="!isEditMode" class="form-group">
-          <label for="modal-valid-until">Validity date</label>
+          <label for="modal-valid-until">
+            Validity date
+            <span class="required">*</span>
+          </label>
 
           <input
             id="modal-valid-until"
@@ -695,6 +704,10 @@ button:disabled {
 }
 
 .form-group small.error-message {
+  color: #dc2626;
+}
+
+.required {
   color: #dc2626;
 }
 </style>
