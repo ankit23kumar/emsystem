@@ -26,23 +26,35 @@ const showProfileForm = ref(false);
 const savingProfile = ref(false);
 const profileErrors = ref({});
 // Tracks whether the user has opened the Roles tab.
-const hasVisitedRoles = ref(false);
-
-const savedTab = localStorage.getItem("emsystem_active_tab")
+const savedTab = localStorage.getItem("emsystem_active_tab");
 
 const activeTab = ref(
   savedTab === "roles" ? "roles" : "users"
-)
+);
 
-watch(activeTab, (newTab) => {
-  localStorage.setItem("emsystem_active_tab", newTab)
-  if (newTab === "roles"  && canReadRoles.value){
-    hasVisitedRoles.value = true;
-  }
-})
+const hasVisitedRoles = ref(false);
 
 const canReadRoles = computed(() =>
   authStore.hasPermission("roles.read"),
+);
+// Save the selected tab.
+watch(activeTab, (newTab) => {
+  localStorage.setItem("emsystem_active_tab", newTab);
+});
+
+// Load Roles only after the user's permissions are available.
+watch(
+  [activeTab, profileLoaded, canReadRoles],
+  ([tab, loaded, allowed]) => {
+    if (tab === "roles" && loaded && allowed) {
+      hasVisitedRoles.value = true;
+    }
+
+    if (loaded && !allowed && tab === "roles") {
+      activeTab.value = "users";
+    }
+  },
+  { immediate: true }
 );
 
 const userStats = ref({
@@ -85,15 +97,6 @@ function formatDate(value) {
   }).format(date);
 }
 
-watch(
-  canReadRoles,
-  (allowed) => {
-    if (!allowed && activeTab.value === "roles") {
-      activeTab.value = "users";
-    }
-  },
-  { immediate: true },
-);
 
 async function loadProfile() {
   if (profileLoaded.value) return;
@@ -354,7 +357,7 @@ onMounted(() => {
 
       <!-- Roles tab -->
       <div
-        v-if="hasVisitedRoles"
+        v-if="profileLoaded && hasVisitedRoles"
         v-show="activeTab === 'roles' && canReadRoles"
         class="dashboard-panel"
       >
