@@ -94,7 +94,35 @@ You will need:
 - Database host
 - Database port
 
-Firstly, we need to create a database "emsystem_db" manually in your system, then paste it your settings.py (Already exists):
+**Step 1: Create the database**
+
+First, create a database named `emsystem_db` manually in your MySQL server.
+
+
+```SQL
+CREATE DATABASE emsystem_db;
+```
+
+**Step 2: Create a MySQL user**
+
+Create a dedicated MySQL user for the project.
+
+```SQL
+CREATE USER 'emsystem_user'@'127.0.0.1' IDENTIFIED BY '*****'; -- replace password with original password
+```
+
+**Step 3: Grant database privileges**
+
+Grant all privileges on the `emsystem_db` database to the newly created user.
+
+
+```SQL
+GRANT ALL PRIVILEGES ON emsystem_db.* TO 'emsystem_user'@'127.0.0.1';
+```
+
+**Step 4: Configure Django database settings**
+
+Paste the following configuration into your Django project's `settings.py` file (already exists):
 
 ```Python
 DATABASES = {
@@ -595,19 +623,19 @@ All API endpoints are accessed through the `/api/` prefix.
 
 ### 1. User Authentication and Management
 
-| Endpoint                               | Purpose                             | Access                        |
-| -------------------------------------- | ----------------------------------- | ----------------------------- |
-| `GET /api/`                          | API status                          | Public                        |
-| `/api/register`                      | Register a new user                 | Public                        |
-| `/api/login`                         | Authenticate and receive JWT        | Public                        |
-| `/api/user-list`                     | Retrieve paginated users            | JWT + permission              |
-| `/api/user-create`                   | Create a user                       | JWT + permission              |
-| `/api/update/<user_id>`              | Update user information             | JWT + permission              |
-| `/api/delete/<user_id>`              | Delete a user                       | JWT + permission              |
-| `/api/me`                            | Retrieve current user's profile     | JWT                           |
-| ~~`/api/renew-account/<user_id>`~~ | ~~Renew an account~~              | ~~JWT; own account only~~   |
-| ~~`/api/reactivate-account`~~      | ~~Reactivate an expired account~~ | ~~Credentials required~~    |
-| `/api/password-reset`                | Reset a user's password             | Verify current implementation |
+| Endpoint                              | Purpose                            | Access                        |
+| ------------------------------------- | ---------------------------------- | ----------------------------- |
+| `GET /api/`                         | API status                         | Public                        |
+| `/api/register`                     | Register a new user                | Public                        |
+| `/api/login`                        | Authenticate and receive JWT       | Public                        |
+| `/api/user-list`                    | Retrieve paginated users           | JWT + permission              |
+| `/api/user-create`                  | Create a user                      | JWT + permission              |
+| `/api/update/<user_id>`             | Update user information            | JWT + permission              |
+| `/api/delete/<user_id>`             | Delete a user                      | JWT + permission              |
+| `/api/me`                           | Retrieve current user's profile    | JWT                           |
+| ~~`/api/renew-account/<user_id>`~~ | ~~Renew an account~~              | ~~JWT; own account only~~    |
+| ~~`/api/reactivate-account`~~      | ~~Reactivate an expired account~~ | ~~Credentials required~~     |
+| `/api/password-reset`               | Reset a user's password            | Verify current implementation |
 
 The HTTP methods and exact request formats should be checked against the corresponding `userauth/urls.py` and views.
 
