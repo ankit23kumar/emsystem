@@ -87,6 +87,17 @@ function selectTab(tab) {
   border-color: #cbd5e1;
 }
 
+.tab-button.active::before {
+  content: "";
+  position: absolute;
+  top: 0px;
+  left: 0.5px;
+  right: 0.5px;
+  height: 3px;
+  background: #3b82f6;
+  border-radius: 12px 12px 0 0;
+}
+
 .tab-locked {
   opacity: 0.55;
   filter: blur(0.3px);
